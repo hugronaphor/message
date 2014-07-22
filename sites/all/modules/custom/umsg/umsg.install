@@ -1,0 +1,196 @@
+<?php
+
+/**
+ * @file
+ * Install file for umsg.module
+ * 
+ * Need to decide if we generally need to be able
+ * change database name in admin, as this *have no reason.
+ * 
+ */
+/**
+ * Default database name.
+ * (same as in settings.php)
+ */
+define('UMSG_DB_NAME', 'msgdb');
+
+define('UMSG_GENERATE_DUMMY_CONTENT', TRUE);
+
+function umsg_install() {
+  variable_set('umsg_db_name', UMSG_DB_NAME);
+  db_set_active(UMSG_DB_NAME);
+  $schema = umsg_schema_msgdb();
+  foreach ($schema as $name => $table) {
+    db_create_table($name, $table);
+  }
+  db_set_active();
+
+  // Generate dummy content.
+  if (UMSG_GENERATE_DUMMY_CONTENT) {
+    _umsg_create_users(2, TRUE);
+    // Generate messages using API.
+  }
+}
+
+function umsg_uninstall() {
+  variable_del('umsg_db_name');
+  db_set_active(UMSG_DB_NAME);
+  $schema = umsg_schema_msgdb();
+  foreach ($schema as $name => $table) {
+    db_drop_table($name);
+  }
+  db_set_active();
+
+  // Delete dummy content.
+  if (UMSG_GENERATE_DUMMY_CONTENT) {
+    _umsg_create_users(0, TRUE);
+  }
+}
+
+function umsg_schema_msgdb() {
+  $schema['message'] = array(
+    'description' => 'Base message table',
+    'fields' => array(
+      'mid' => array(
+        'description' => 'Private Message ID',
+        'type' => 'serial',
+        'not null' => TRUE,
+        'unsigned' => TRUE,
+      ),
+      'author' => array(
+        'description' => 'UID of the author',
+        'type' => 'int',
+        'not null' => TRUE,
+        'unsigned' => TRUE,
+      ),
+      'subject' => array(
+        'description' => 'Subject text of the message',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+      ),
+      'body' => array(
+        'description' => 'Body of the message',
+        'type' => 'text',
+        'not null' => TRUE,
+        'size' => 'big',
+      ),
+      'language' => array(
+        'type' => 'varchar',
+        'length' => 12,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'created' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'changed' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+    ),
+    'primary key' => array('mid'),
+  );
+
+  $schema['message_index'] = array(
+    'description' => '{pm_index} holds indexing information about messages and recipients for fast retrieval',
+    'fields' => array(
+      'mid' => array(
+        'description' => 'Private Message ID',
+        'type' => 'int',
+        'not null' => TRUE,
+        'unsigned' => TRUE,
+      ),
+      'thread_id' => array(
+        'description' => 'Messages thread ID',
+        'type' => 'int',
+        'not null' => TRUE,
+        'unsigned' => TRUE,
+      ),
+      'recipient' => array(
+        'description' => 'ID of the recipient object, typically user',
+        'type' => 'int',
+        'not null' => TRUE,
+        'unsigned' => TRUE,
+      ),
+      'is_new' => array(
+        'description' => 'Whether the user has read this message',
+        'type' => 'int',
+        'default' => 1,
+        'not null' => TRUE,
+        'unsigned' => TRUE,
+      ),
+      'deleted' => array(
+        'description' => 'Whether the user has deleted this message',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0
+      ),
+      'type' => array(
+        'description' => 'Type of recipient object',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => 'user'
+      ),
+    ),
+    'primary key' => array('mid', 'recipient', 'type'),
+    'indexes' => array(
+      'list' => array('recipient', 'type', 'deleted', 'is_new'),
+      'messages' => array('mid', 'recipient', 'type'),
+      'participants' => array('thread_id', 'recipient', 'type', 'deleted'),
+    ),
+  );
+
+  return $schema;
+}
+
+/**
+ * Generate random users.
+ *
+ * @param $num
+ *  Number of users to generate.
+ * @param $kill
+ *  Boolean that indicates if existing users should be removed first.
+ */
+function _umsg_create_users($num, $kill, $age = 0) {
+  $url = parse_url($GLOBALS['base_url']);
+  if ($kill) {
+    $uids = db_select('users', 'u')
+      ->fields('u', array('uid'))
+      ->condition('uid', 1, '>')
+      ->execute()
+      ->fetchAllAssoc('uid');
+    user_delete_multiple(array_keys($uids));
+  }
+
+  if ($num > 0) {
+    $names = array();
+    while (count($names) < $num) {
+      $name = substr(md5(microtime()), 0, 5) . ' ' . substr(md5(microtime()), 0, 12);
+      $names[$name] = '';
+    }
+
+    $roles = array(DRUPAL_AUTHENTICATED_RID);
+    foreach ($names as $name => $value) {
+      $edit = array(
+        'uid' => NULL,
+        'name' => $name,
+        'pass' => 'test',
+        'mail' => str_replace(' ', '', $name) . '@' . 'dummy.invalid',
+        'status' => 1,
+        'created' => REQUEST_TIME - mt_rand(0, $age),
+        'roles' => drupal_map_assoc($roles),
+        'umsg_dummy_generate' => TRUE,
+      );
+
+      user_save(drupal_anonymous_user(), $edit);
+    }
+  }
+
+  drupal_set_message(t('!num_users created.', array('!num_users' => format_plural($num, '1 user', '@count users'))));
+}

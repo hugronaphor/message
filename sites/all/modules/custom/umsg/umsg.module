@@ -1,0 +1,114 @@
+<?php
+
+/**
+ * @file
+ * Main module file.
+ */
+/**
+ * Status constant for read messages.
+ */
+define('PRIVATEMSG_READ', 0);
+/**
+ * Status constant for unread messages.
+ */
+define('PRIVATEMSG_UNREAD', 1);
+/**
+ * Show unlimited messages in a thread.
+ */
+define('PRIVATEMSG_UNLIMITED', 'unlimited');
+
+/**
+ * Implements hook_permission().
+ */
+function umsg_permission() {
+  return array(
+    'administer umsg settings' => array(
+      'title' => t('Administer umsg'),
+      'description' => t('Perform maintenance tasks for umsg'),
+    ),
+    'read umsg' => array(
+      'title' => t('Read user messages'),
+      'description' => t('Read user messages'),
+    ),
+    'read all user messages' => array(
+      'title' => t('Read all user messages'),
+      'description' => t('Includes messages of other users'),
+    ),
+    'write umsg' => array(
+      'title' => t('Write new user messages'),
+      'description' => t('Write new user messages'),
+    ),
+    'delete umsg' => array(
+      'title' => t('Delete user messages'),
+      'description' => t('Delete user messages'),
+    ),
+//    'allow disabling umsg' => array(
+//      'title' => t('Allow disabling user messages'),
+//      'description' => t("Allows user to disable umsg so that they can't receive or send any user messages.")
+//    ),
+//    'reply only umsg' => array(
+//      'title' => t('Reply to user messages'),
+//      'description' => t('Allows to reply to user messages but not send new ones. Note that the write new user messages permission includes replies.')
+//    ),
+//    'use tokens in umsg' => array(
+//      'title' => t('Use tokens in user messages'),
+//      'description' => t("Allows user to use available tokens when sending user messages.")
+//    ),
+//    'select text format for umsg' => array(
+//      'title' => t('Select text format for user messages'),
+//      'description' => t('Allows to choose the text format when sending user messages. Otherwise, the default is used.'),
+//    ),
+  );
+}
+
+/**
+ * Implements hook_menu().
+ */
+function umsg_menu() {
+
+  $items['admin/config/messaging/umsg'] = array(
+    'title' => 'User message settings',
+    'description' => 'Configure user messaging settings.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('umsg_admin_settings'),
+    'file' => 'umsg.admin.inc',
+    'access arguments' => array('administer umsg settings'),
+    'type' => MENU_NORMAL_ITEM,
+  );
+  $items['admin/config/messaging/umsg/settings'] = array(
+    'title' => 'User message settings',
+    'description' => 'Configure user messaging settings.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('umsg_admin_settings'),
+    'file' => 'umsg.admin.inc',
+    'access arguments' => array('administer umsg settings'),
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => -10,
+  );
+
+  return $items;
+}
+
+function umsg_preprocess_html(&$vars) {
+  
+}
+
+/**
+ * Implements hook_entity_info().
+ *
+ * This is the fundamental description of the entity.
+ *
+ * It provides a single entity with a single bundle and without revision
+ * support.
+ */
+function usmg_entity_info() {
+  $info = array(
+    'entity_type' => array(
+      'controller class' => 'EntityAPIController',
+      // ...
+      'views controller class' => 'EntityDefaultViewsController',
+    ),
+  );
+
+  return $info;
+}

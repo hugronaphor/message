@@ -1,0 +1,8 @@
+name = User message
+description = Allow messages between users.
+package = Custom
+core = 7.x
+
+dependencies[] = ctools (>=1.4)
+
+configure=admin/config/messaging/umsg
