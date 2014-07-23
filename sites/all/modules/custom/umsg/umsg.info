@@ -4,5 +4,6 @@ package = Custom
 core = 7.x
 
 dependencies[] = ctools (>=1.4)
+dependencies[] = entity
 
 configure=admin/config/messaging/umsg

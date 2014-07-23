@@ -95,20 +95,155 @@ function umsg_preprocess_html(&$vars) {
 
 /**
  * Implements hook_entity_info().
- *
- * This is the fundamental description of the entity.
- *
- * It provides a single entity with a single bundle and without revision
- * support.
  */
-function usmg_entity_info() {
-  $info = array(
-    'entity_type' => array(
-      'controller class' => 'EntityAPIController',
-      // ...
-      'views controller class' => 'EntityDefaultViewsController',
+function umsg_entity_info() {
+
+  $info = array();
+
+  $info['umsg'] = array(
+    'label' => t('User message'),
+    'base table' => 'message',
+    'entity keys' => array(
+      'id' => 'mid',
+    //'label' => 'subject',
     ),
+    'module' => 'umsg',
+    'static cache' => FALSE, //dev
+    'entity class' => 'Entity',
+    'controller class' => 'UmsgEntityController',
+    'views controller class' => 'EntityDefaultViewsController',
   );
 
   return $info;
+}
+
+/**
+ * UmsgBasicControllerInterface definition.
+ *
+ * @see hook_entity_info_alter()
+ */
+interface UmsgBasicControllerInterface extends EntityAPIControllerInterface {
+
+  public function save($entity, DatabaseTransaction $transaction = NULL);
+
+  public function load($ids = array(), $conditions = array());
+
+  public function create(array $values = array());
+
+  public function buildContent($entity, $view_mode = 'full', $langcode = NULL, $content = array());
+
+  public function setUmsgDbActive();
+
+  public function setDefaultDbActive();
+}
+
+/**
+ * Extending the EntityAPIController for the User message entity.
+ */
+class UmsgEntityController extends EntityAPIController implements UmsgBasicControllerInterface {
+
+  /**
+   * To do:
+   * - inject database name directly in method instead variable_get.
+   */
+  public function create(array $values = array()) {
+
+    dsm('create umsg');
+
+    global $user;
+    $values += array(
+      'title' => '',
+      'description' => '',
+      'created' => REQUEST_TIME,
+      'changed' => REQUEST_TIME,
+      'uid' => $user->uid,
+    );
+    return parent::create($values);
+  }
+
+  public function buildContent($entity, $view_mode = 'full', $langcode = NULL, $content = array()) {
+
+    dsm('buildContent umsg');
+
+    $wrapper = entity_metadata_wrapper('example_task', $entity);
+    $content['author'] = array('#markup' => t('Created by: !author', array('!author' => $wrapper->uid->name->value(array('sanitize' => TRUE)))));
+
+    // Make Description and Status themed like default fields.
+    $content['description'] = array(
+      '#theme' => 'field',
+      '#weight' => 0,
+      '#title' => t('Description'),
+      '#access' => TRUE,
+      '#label_display' => 'above',
+      '#view_mode' => 'full',
+      '#language' => LANGUAGE_NONE,
+      '#field_name' => 'field_fake_description',
+      '#field_type' => 'text',
+      '#entity_type' => 'example_task',
+      '#bundle' => $entity->type,
+      '#items' => array(array('value' => $entity->description)),
+      '#formatter' => 'text_default',
+      0 => array('#markup' => check_plain($entity->description))
+    );
+
+    return parent::buildContent($entity, $view_mode, $langcode, $content);
+  }
+
+  public function save($entity, DatabaseTransaction $transaction = NULL) {
+    
+    dsm('test');
+    
+    if (isset($entity->is_new)) {
+      $entity->created = REQUEST_TIME;
+    }
+    $entity->changed = REQUEST_TIME;
+    return parent::save($entity, $transaction);
+  }
+
+  public function load($ids = array(), $conditions = array()) {
+    $this->setUmsgDbActive();
+
+    $passed_ids = !is_array($ids) ? $ids : array();
+
+    //$query = Database::getConnection('default', 'msgdb'); // dont allow joins
+    $query = db_select('message', 'm');
+    $query->leftJoin('message_index', 'mi', 'mi.mid=m.mid');
+    $query->fields('m');
+    $query->fields('mi');
+    $query->condition('m.mid', $passed_ids, 'IN');
+    $entities = $query->execute()->fetchAll();
+
+    // To think about structure of hoe the data should be recived.
+    // message can be only one, but inde seems to be only 2.
+    // so: {id, field, [index1, index2]}
+
+    $this->setDefaultDbActive();
+    return !empty($entities) ? $entities : array();
+  }
+
+  /**
+   * Create and return a new entity.
+   */
+//  public function create(array $values = array()) {
+//    
+//    dsm('test 2345');
+//    
+//    $entity = new stdClass();
+//    $entity->recipien = 2;
+//    $entity->basic_id = 0;
+//    $entity->bundle_type = 'first_example_bundle';
+//    $entity->item_description = '';
+//    return $entity;
+//  }
+
+  public function setUmsgDbActive() {
+    variable_get('umsg_db_name');
+    db_set_active('msgdb');
+  }
+
+  public function setDefaultDbActive() {
+    variable_get('umsg_db_name');
+    db_set_active();
+  }
+
 }

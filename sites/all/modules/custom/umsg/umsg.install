@@ -9,7 +9,7 @@
  * 
  */
 /**
- * Default database name.
+ * Default message database name.
  * (same as in settings.php)
  */
 define('UMSG_DB_NAME', 'msgdb');
@@ -27,7 +27,7 @@ function umsg_install() {
 
   // Generate dummy content.
   if (UMSG_GENERATE_DUMMY_CONTENT) {
-    _umsg_create_users(2, TRUE);
+    _umsg_create_users(10, TRUE);
     // Generate messages using API.
   }
 }
@@ -52,7 +52,7 @@ function umsg_schema_msgdb() {
     'description' => 'Base message table',
     'fields' => array(
       'mid' => array(
-        'description' => 'Private Message ID',
+        'description' => 'User Message ID',
         'type' => 'serial',
         'not null' => TRUE,
         'unsigned' => TRUE,
@@ -98,8 +98,14 @@ function umsg_schema_msgdb() {
   $schema['message_index'] = array(
     'description' => '{pm_index} holds indexing information about messages and recipients for fast retrieval',
     'fields' => array(
+      'miid' => array(
+        'description' => 'Message Index ID',
+        'type' => 'int',
+        'not null' => TRUE,
+        'unsigned' => TRUE,
+      ),
       'mid' => array(
-        'description' => 'Private Message ID',
+        'description' => 'User Message ID',
         'type' => 'int',
         'not null' => TRUE,
         'unsigned' => TRUE,
@@ -138,7 +144,7 @@ function umsg_schema_msgdb() {
         'default' => 'user'
       ),
     ),
-    'primary key' => array('mid', 'recipient', 'type'),
+    'primary key' => array('miid', 'recipient'),
     'indexes' => array(
       'list' => array('recipient', 'type', 'deleted', 'is_new'),
       'messages' => array('mid', 'recipient', 'type'),
