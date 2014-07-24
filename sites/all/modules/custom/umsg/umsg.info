@@ -7,3 +7,7 @@ dependencies[] = ctools (>=1.4)
 dependencies[] = entity
 
 configure=admin/config/messaging/umsg
+
+files[] = umsg.pages.inc
+files[] = umsg.admin.inc
+files[] = api/umsgController.php

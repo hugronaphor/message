@@ -27,8 +27,8 @@ function umsg_permission() {
       'description' => t('Perform maintenance tasks for umsg'),
     ),
     'read umsg' => array(
-      'title' => t('Read user messages'),
-      'description' => t('Read user messages'),
+      'title' => t('Read own user messages'),
+      'description' => t('Read own user messages'),
     ),
     'read all user messages' => array(
       'title' => t('Read all user messages'),
@@ -66,6 +66,71 @@ function umsg_permission() {
  */
 function umsg_menu() {
 
+  $items['messages'] = array(
+    'title' => 'Messages',
+    'title callback' => 'umsg_title_callback',
+    'page callback' => 'umsg_list_page',
+    'page arguments' => array('list'),
+    'file' => 'umsg.pages.inc',
+    'access callback' => 'umsg_user_access',
+    'type' => MENU_NORMAL_ITEM,
+    'menu_name' => 'user-menu',
+  );
+  $items['messages/list'] = array(
+    'title' => 'Messages',
+    'page callback' => 'umsg_list_page',
+    'page arguments' => array('list'),
+    'file' => 'umsg.pages.inc',
+    'access callback' => 'umsg_user_access',
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => -10,
+    'menu_name' => 'user-menu',
+  );
+//  $items['messages/view/%privatemsg_thread'] = array(
+//    // Set the third argument to TRUE so that we can show access denied instead
+//    // of not found.
+//    'load arguments'   => array(NULL, NULL, TRUE),
+//    'title'            => 'Read message',
+//    'page callback'    => 'privatemsg_view',
+//    'page arguments'   => array(2),
+//    'file'             => 'umsg.pages.inc',
+//    'access callback'  => 'privatemsg_view_access',
+//    'access arguments' => array(2),
+//    'type'             => MENU_LOCAL_TASK,
+//    'weight'           => -5,
+//    'menu_name'        => 'user-menu',
+//  );
+//  $items['messages/delete/%privatemsg_thread/%privatemsg_message'] = array(
+//    'title'            => 'Delete message',
+//    'page callback'    => 'drupal_get_form',
+//    'page arguments'   => array('privatemsg_delete', 2, 3),
+//    'file'             => 'umsg.pages.inc',
+//    'access callback'  => 'privatemsg_user_access',
+//    'access arguments' => array('delete privatemsg'),
+//    'type'             => MENU_CALLBACK,
+//    'weight'           => -10,
+//    'menu_name'        => 'user-menu',
+//  );
+//  $items['messages/new'] = array(
+//    'title'            => 'Write new message',
+//    'page callback'    => 'drupal_get_form',
+//    'page arguments'   => array('privatemsg_new', 2, 3, NULL),
+//    'file'             => 'umsg.pages.inc',
+//    'access callback'  => 'privatemsg_user_access',
+//    'access arguments' => array('write privatemsg'),
+//    'type'             => MENU_LOCAL_ACTION,
+//    'weight'           => -3,
+//    'menu_name'        => 'user-menu',
+//  );
+//  // Auto-completes available user names & removes duplicates.
+//  $items['messages/autocomplete'] = array(
+//    'page callback'    => 'privatemsg_autocomplete',
+//    'file'             => 'umsg.pages.inc',
+//    'access callback'  => 'privatemsg_user_access',
+//    'access arguments' => array('write privatemsg'),
+//    'type'             => MENU_CALLBACK,
+//  );
+  // Admin pages.
   $items['admin/config/messaging/umsg'] = array(
     'title' => 'User message settings',
     'description' => 'Configure user messaging settings.',
@@ -94,156 +159,65 @@ function umsg_preprocess_html(&$vars) {
 }
 
 /**
- * Implements hook_entity_info().
- */
-function umsg_entity_info() {
-
-  $info = array();
-
-  $info['umsg'] = array(
-    'label' => t('User message'),
-    'base table' => 'message',
-    'entity keys' => array(
-      'id' => 'mid',
-    //'label' => 'subject',
-    ),
-    'module' => 'umsg',
-    'static cache' => FALSE, //dev
-    'entity class' => 'Entity',
-    'controller class' => 'UmsgEntityController',
-    'views controller class' => 'EntityDefaultViewsController',
-  );
-
-  return $info;
-}
-
-/**
- * UmsgBasicControllerInterface definition.
+ * Wrapper for user_access.
  *
- * @see hook_entity_info_alter()
+ * Never allows anonymous user access.
+ *
+ * @param $permission
+ *   Permission string, defaults to read privatemsg
+ *
+ * @return
+ *   TRUE if user has access, FALSE if not
+ *
+ * @ingroup api
  */
-interface UmsgBasicControllerInterface extends EntityAPIControllerInterface {
+function umsg_user_access($permission = 'read privatemsg', $account = NULL) {
+  if ($account === NULL) {
+    global $user;
+    $account = $user;
+  }
 
-  public function save($entity, DatabaseTransaction $transaction = NULL);
+  // Disallow anonymous access, regardless of permissions
+  if (!$account->uid) {
+    return FALSE;
+  }
 
-  public function load($ids = array(), $conditions = array());
+  if (!user_access($permission, $account)) {
+    return FALSE;
+  }
+  return TRUE;
+}
 
-  public function create(array $values = array());
+function umsg_title_callback($title = NULL) {
+  $count = umsg_unread_count();
 
-  public function buildContent($entity, $view_mode = 'full', $langcode = NULL, $content = array());
-
-  public function setUmsgDbActive();
-
-  public function setDefaultDbActive();
+  if ($count > 0) {
+    return t('Messages (@count new)', array('@count' => $count));
+  }
+  return t('Messages');
 }
 
 /**
- * Extending the EntityAPIController for the User message entity.
+ * Return number of unread messages for an account.
+ *
+ * @param $account
+ *   Specify the user for which the unread count should be loaded.
+ *
+ * @ingroup api
  */
-class UmsgEntityController extends EntityAPIController implements UmsgBasicControllerInterface {
+function umsg_unread_count($account = NULL) {
 
-  /**
-   * To do:
-   * - inject database name directly in method instead variable_get.
-   */
-  public function create(array $values = array()) {
+  return 2;
 
-    dsm('create umsg');
-
+  $counts = &drupal_static(__FUNCTION__, array());
+  if (!$account || $account->uid == 0) {
     global $user;
-    $values += array(
-      'title' => '',
-      'description' => '',
-      'created' => REQUEST_TIME,
-      'changed' => REQUEST_TIME,
-      'uid' => $user->uid,
-    );
-    return parent::create($values);
+    $account = $user;
   }
-
-  public function buildContent($entity, $view_mode = 'full', $langcode = NULL, $content = array()) {
-
-    dsm('buildContent umsg');
-
-    $wrapper = entity_metadata_wrapper('example_task', $entity);
-    $content['author'] = array('#markup' => t('Created by: !author', array('!author' => $wrapper->uid->name->value(array('sanitize' => TRUE)))));
-
-    // Make Description and Status themed like default fields.
-    $content['description'] = array(
-      '#theme' => 'field',
-      '#weight' => 0,
-      '#title' => t('Description'),
-      '#access' => TRUE,
-      '#label_display' => 'above',
-      '#view_mode' => 'full',
-      '#language' => LANGUAGE_NONE,
-      '#field_name' => 'field_fake_description',
-      '#field_type' => 'text',
-      '#entity_type' => 'example_task',
-      '#bundle' => $entity->type,
-      '#items' => array(array('value' => $entity->description)),
-      '#formatter' => 'text_default',
-      0 => array('#markup' => check_plain($entity->description))
-    );
-
-    return parent::buildContent($entity, $view_mode, $langcode, $content);
+  if (!isset($counts[$account->uid])) {
+    $counts[$account->uid] = _privatemsg_assemble_query('unread_count', $account)
+      ->execute()
+      ->fetchField();
   }
-
-  public function save($entity, DatabaseTransaction $transaction = NULL) {
-    
-    dsm('test');
-    
-    if (isset($entity->is_new)) {
-      $entity->created = REQUEST_TIME;
-    }
-    $entity->changed = REQUEST_TIME;
-    return parent::save($entity, $transaction);
-  }
-
-  public function load($ids = array(), $conditions = array()) {
-    $this->setUmsgDbActive();
-
-    $passed_ids = !is_array($ids) ? $ids : array();
-
-    //$query = Database::getConnection('default', 'msgdb'); // dont allow joins
-    $query = db_select('message', 'm');
-    $query->leftJoin('message_index', 'mi', 'mi.mid=m.mid');
-    $query->fields('m');
-    $query->fields('mi');
-    $query->condition('m.mid', $passed_ids, 'IN');
-    $entities = $query->execute()->fetchAll();
-
-    // To think about structure of hoe the data should be recived.
-    // message can be only one, but inde seems to be only 2.
-    // so: {id, field, [index1, index2]}
-
-    $this->setDefaultDbActive();
-    return !empty($entities) ? $entities : array();
-  }
-
-  /**
-   * Create and return a new entity.
-   */
-//  public function create(array $values = array()) {
-//    
-//    dsm('test 2345');
-//    
-//    $entity = new stdClass();
-//    $entity->recipien = 2;
-//    $entity->basic_id = 0;
-//    $entity->bundle_type = 'first_example_bundle';
-//    $entity->item_description = '';
-//    return $entity;
-//  }
-
-  public function setUmsgDbActive() {
-    variable_get('umsg_db_name');
-    db_set_active('msgdb');
-  }
-
-  public function setDefaultDbActive() {
-    variable_get('umsg_db_name');
-    db_set_active();
-  }
-
+  return $counts[$account->uid];
 }
