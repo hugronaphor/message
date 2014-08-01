@@ -39,7 +39,8 @@ function _privatemsg_action_form($type) {
           'effect' => 'fade',
         ),
       );
-    } elseif (isset($array['label'])) {
+    }
+    elseif (isset($array['label'])) {
       $options[$operation] = $array['label'];
     }
   }
@@ -107,7 +108,8 @@ function privatemsg_delete_submit($form, &$form_state) {
     if (isset($form_state['values']['delete_options']) && $form_state['values']['delete_options']) {
       privatemsg_message_change_delete($form_state['values']['pmid'], 1);
       drupal_set_message(t('Message has been deleted for all users.'));
-    } else {
+    }
+    else {
       privatemsg_message_change_delete($form_state['values']['pmid'], 1, $account);
       drupal_set_message(t('Message has been deleted.'));
     }
@@ -144,22 +146,11 @@ function umsg_list_page($argument = 'list', $uid = NULL) {
     $account = $account_check;
   }
 
-  $umsg = new umsgController();  
-  $messages = $umsg->load();
-  
-  dsm($messages);
-  
-  return 'test';
-
-
   return drupal_get_form('umsg_list', $argument, $account);
 }
 
 function umsg_list($form, &$form_state, $argument, $account) {
-  drupal_add_css(drupal_get_path('module', 'umsg') . '/styles/privatemsg-list.css');
-
-
-
+  //drupal_add_css(drupal_get_path('module', 'umsg') . '/styles/privatemsg-list.css');
   // If this is an AJAX request, update $_GET['q'] so that table sorting and
   // similar links are using the correct base path.
   if ($_GET['q'] == 'system/ajax') {
@@ -171,32 +162,49 @@ function umsg_list($form, &$form_state, $argument, $account) {
   }
 
   // Load the table columns.
-  $columns = array_merge(array('subject', 'last_updated'), array_filter(variable_get('privatemsg_display_fields', array('participants'))));
-
+  //$columns = array_merge(array('subject', 'last_updated'), array_filter(variable_get('privatemsg_display_fields', array('participants'))));
   // Load the themed list headers based on the available data.
-  $headers = _privatemsg_list_headers($columns);
+  //$headers = _privatemsg_list_headers($columns);
+
+
 
   $form = array(
-    '#list_argument' => $argument,
-    '#submit' => array('privatemsg_list_submit'),
+    //'#list_argument' => $argument,
+    //'#submit' => array('privatemsg_list_submit'),
     'updated' => array(
-      '#prefix' => '<div id="privatemsg-list-form">',
+      '#prefix' => '<div id="umsg-list-form">',
       '#suffix' => '</div>',
     ),
   );
-  $form['updated']['list'] = array(
-    '#type' => 'tableselect',
-    '#header' => $headers,
-    '#options' => array(),
-    '#attributes' => array('class' => array('privatemsg-list')),
-    '#empty' => t('No messages available.'),
-    '#weight' => 5,
-    '#pre_render' => array('_privatemsg_list_thread'),
+
+  $navigation = module_invoke('umsg', 'block_view', 'umsg_msg_navigation');
+  // Attach main navigation links.
+  $form['updated']['navigation'] = array(
+    '#type' => 'item',
+    '#prefix' => '<div id="umsg-list-main-navigation">',
+    '#suffix' => '</div>',
+    '#markup' => !empty($navigation['content']['content']) ? $navigation['content']['content'] : '',
   );
 
-  $query = _privatemsg_assemble_query('list', $account, $argument);
+  $form['updated']['list'] = array(
+    '#type' => 'tableselect',
+    '#header' => array('From', 'Body cut', 'last_updated' => 'updated'),
+    '#options' => array(),
+    '#attributes' => array('class' => array('umsg-list')),
+    '#empty' => t('No messages available.'),
+    '#weight' => 5,
+    '#pre_render' => array('_umsg_list_thread'),
+  );
+
+  //$query = _privatemsg_assemble_query('list', $account, $argument);
+
+  $umsg = new umsgController();
+  $query = $umsg->load('all');
+
   $i = 0;
   foreach ($query->execute() as $row) {
+
+//    dsm($row, 'rows');
     // Store the raw row data.
     $form['updated']['list']['#options'][$row->thread_id] = (array) $row;
     // Tableselect sorts the options, set a weight so that the order doesn't get
@@ -204,15 +212,23 @@ function umsg_list($form, &$form_state, $argument, $account) {
     $form['updated']['list']['#options'][$row->thread_id]['#weight'] = $i++;
   }
 
+  //dsm($form['updated']['list']['#options']);
+
   if (!empty($form['updated']['list']['#options'])) {
-    $form['updated']['actions'] = _privatemsg_action_form($argument);
+    //$form['updated']['actions'] = _privatemsg_action_form($argument);
   }
 
   // Save the currently active account, used for actions.
   $form['account'] = array('#type' => 'value', '#value' => $account);
 
+  dsm($form);
+
   // Define checkboxes, pager and theme
-  $form['updated']['pager'] = array('#markup' => theme('pager'), '#weight' => 20);
+  // FOR SOME REASON IT TRY TO QUERY IN SECOND DATABASE
+  //$form['updated']['pager'] = array('#markup' => theme('pager'), '#weight' => 20);
+
+
+
   return $form;
 }
 
@@ -275,9 +291,11 @@ function privatemsg_new($form, &$form_state, $recipients = array(), $subject = '
   if (!empty($recipients) && is_string($recipients) || is_int($recipients)) {
     $unique = TRUE;
     $recipients = _privatemsg_generate_user_array($recipients);
-  } elseif (is_object($recipients)) {
+  }
+  elseif (is_object($recipients)) {
     $recipients = array($recipients);
-  } elseif (empty($recipients) && is_string($recipients)) {
+  }
+  elseif (empty($recipients) && is_string($recipients)) {
     $recipients = array();
   }
 
@@ -313,7 +331,8 @@ function privatemsg_new($form, &$form_state, $recipients = array(), $subject = '
       }
       $to[privatemsg_recipient_key($recipient)] = privatemsg_recipient_format($recipient);
       $to_plain[privatemsg_recipient_key($recipient)] = privatemsg_recipient_format($recipient, array('plain' => TRUE, 'unique' => $unique));
-    } else {
+    }
+    else {
       // Store blocked messages. These are only displayed if all recipients
       // are blocked.
       $first_reason = reset($user_blocked);
@@ -347,7 +366,8 @@ function privatemsg_new($form, &$form_state, $recipients = array(), $subject = '
   }
   if (!$thread_id && !empty($recipients_plain)) {
     drupal_set_title(t('Write new message to @recipient', array('@recipient' => $recipients_plain)));
-  } elseif (!$thread_id) {
+  }
+  elseif (!$thread_id) {
     drupal_set_title(t('Write new message'));
   }
 
@@ -397,7 +417,7 @@ function privatemsg_new($form, &$form_state, $recipients = array(), $subject = '
       '#weight' => -10,
       '#size' => 50,
       '#autocomplete_path' => 'messages/autocomplete',
-      // Do not hardcode #maxlength, make it configurable by number of recipients, not their name length.
+            // Do not hardcode #maxlength, make it configurable by number of recipients, not their name length.
     );
   }
   $form['subject'] = array(
@@ -455,7 +475,8 @@ function privatemsg_new($form, &$form_state, $recipients = array(), $subject = '
   $title = t('Cancel');
   if (isset($_REQUEST['destination'])) {
     $url = $_REQUEST['destination'];
-  } elseif (!is_null($thread_id)) {
+  }
+  elseif (!is_null($thread_id)) {
     $url = $_GET['q'];
     $title = t('Clear');
   }
@@ -544,7 +565,8 @@ function privatemsg_new_validate($form, &$form_state) {
   // Only parse the user string for a new thread.
   if (!isset($message->thread_id)) {
     list($message->recipients, $invalid, $duplicates, $denieds) = _privatemsg_parse_userstring($message->recipient);
-  } else {
+  }
+  else {
     // Load participants. Limit recipients to visible unless read_all is TRUE.
     $message->recipients = _privatemsg_load_thread_participants($message->thread_id, $message->read_all ? FALSE : $message->author);
   }
@@ -631,16 +653,19 @@ function privatemsg_new_submit($form, &$form_state) {
         }
         // Forward to the new message in the thread.
         $form_state['redirect'] = array('messages/view/' . $message->thread_id, array('fragment' => 'privatemsg-mid-' . $message->mid));
-      } elseif (!empty($redirect)) {
+      }
+      elseif (!empty($redirect)) {
         $form_state['redirect'] = $redirect;
       }
     }
-  } catch (Exception $e) {
+  }
+  catch (Exception $e) {
     if (error_displayable()) {
       require_once DRUPAL_ROOT . '/includes/errors.inc';
       $variables = _drupal_decode_exception($e);
       drupal_set_message(t('Failed to send a message to !recipients. %type: !message in %function (line %line of %file).', array('!recipients' => implode(', ', $recipient_names)) + $variables), 'error');
-    } else {
+    }
+    else {
       drupal_set_message(t('Failed to send a message to !recipients. Contact your site administrator.', array('!recipients' => implode(', ', $recipient_names))), 'error');
     }
   }
@@ -859,7 +884,8 @@ function privatemsg_load_recipients($mid, $recipient, &$context) {
     $context['sandbox']['current_offset'] += 10;
     // Set finished based on sandbox.
     $context['finished'] = empty($context['sandbox']['count']) ? 1 : ($context['sandbox']['current_offset'] / $context['sandbox']['count']);
-  } else {
+  }
+  else {
     // If no recipients were returned, mark as finished too.
     $context['sandbox']['finished'] = 1;
   }
@@ -867,10 +893,10 @@ function privatemsg_load_recipients($mid, $recipient, &$context) {
   // If we are finished, mark the recipient as read.
   if ($context['finished'] >= 1) {
     db_update('pm_index')
-      ->fields(array('is_new' => PRIVATEMSG_READ))
-      ->condition('mid', $mid)
-      ->condition('recipient', $recipient->recipient)
-      ->condition('type', $recipient->type)
-      ->execute();
+            ->fields(array('is_new' => PRIVATEMSG_READ))
+            ->condition('mid', $mid)
+            ->condition('recipient', $recipient->recipient)
+            ->condition('type', $recipient->type)
+            ->execute();
   }
 }

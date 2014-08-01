@@ -28,8 +28,87 @@ function umsg_install() {
   // Generate dummy content.
   if (UMSG_GENERATE_DUMMY_CONTENT) {
     _umsg_create_users(10, TRUE);
-    // Generate messages using API.
+    // To Generate messages using API.
+
+    _umsg_populate_messages();
   }
+
+  // Define default formats for date format types.
+  variable_set("date_format_umsg_current_day", 'g:i a');
+  variable_set("date_format_umsg_current_year", 'M j');
+  variable_set("date_format_umsg_years", 'n/j/y');
+}
+
+function _umsg_populate_messages() {
+  $admin_user = user_load(1);
+
+  // Get generated users.
+  $uids = db_select('users', 'u')
+          ->fields('u', array('uid'))
+          ->condition('uid', $admin_user->uid, '>')
+          ->execute()
+          ->fetchAllAssoc('uid');
+
+  $recipient_users = user_load_multiple(array_keys($uids));
+  db_set_active(UMSG_DB_NAME);
+  // Generate messages.
+  foreach ($recipient_users as $key => $recipient_user) {
+
+    // Prepare message data.
+    $message = array();
+    $message['subject'] = 'The test subject from ' . $admin_user->name . ' to ' . $recipient_user->name;
+    $message['author'] = $admin_user->uid;
+    $message['body'] = substr(md5(microtime()), 0, 10) . ' -- Morbi mattis ullamcorper velit. Etiam ultricies nisi vel augue. Sed fringilla mauris sit amet nibh. Suspendisse faucibus.';
+    $message['format'] = 'plain_text';
+    $message['timestamp'] = time();
+
+    // Insert data.
+    $mid = db_insert('message')
+            ->fields($message)
+            ->execute();
+
+    // Prepare message index data.
+    $message = new stdClass();
+    $message->mid = $mid;
+
+    // Thread ID is the same as the mid if it's the first message in the thread.
+    if (!isset($message->thread_id)) {
+      $message->thread_id = $mid;
+    }
+
+    $msg_index_args_1 = array(
+      'mid' => $mid,
+      'thread_id' => $message->thread_id,
+      'recipient' => $admin_user->uid,
+      'type' => 'user', // will be deleted !!!
+      'is_new' => 1,
+      'deleted' => 0,
+    );
+
+    $msg_index_args_2 = array(
+      'mid' => $mid,
+      'thread_id' => $message->thread_id,
+      'recipient' => $recipient_user->uid,
+      'type' => 'user', // will be deleted !!!
+      'is_new' => 1,
+      'deleted' => 0,
+    );
+
+
+    // Add registration to sender.
+    db_insert('message_index')
+            ->fields($msg_index_args_1)
+            ->execute();
+
+    // Add registration to recipient.
+    db_insert('message_index')
+            ->fields($msg_index_args_2)
+            ->execute();
+
+    // To create reply messages.
+    // ...
+  }
+  db_set_active();
 }
 
 function umsg_uninstall() {
@@ -75,21 +154,17 @@ function umsg_schema_msgdb() {
         'not null' => TRUE,
         'size' => 'big',
       ),
-      'language' => array(
+      'format' => array(
         'type' => 'varchar',
-        'length' => 12,
-        'not null' => TRUE,
-        'default' => '',
+        'length' => 255,
+        'not null' => FALSE,
+        'description' => 'The {filter_formats}.format of the message text.',
       ),
-      'created' => array(
+      'timestamp' => array(
+        'description' => 'Time when the message was sent',
         'type' => 'int',
         'not null' => TRUE,
-        'default' => 0,
-      ),
-      'changed' => array(
-        'type' => 'int',
-        'not null' => TRUE,
-        'default' => 0,
+        'unsigned' => TRUE,
       ),
     ),
     'primary key' => array('mid'),
@@ -98,12 +173,6 @@ function umsg_schema_msgdb() {
   $schema['message_index'] = array(
     'description' => '{pm_index} holds indexing information about messages and recipients for fast retrieval',
     'fields' => array(
-      'miid' => array(
-        'description' => 'Message Index ID',
-        'type' => 'int',
-        'not null' => TRUE,
-        'unsigned' => TRUE,
-      ),
       'mid' => array(
         'description' => 'User Message ID',
         'type' => 'int',
@@ -144,7 +213,7 @@ function umsg_schema_msgdb() {
         'default' => 'user'
       ),
     ),
-    'primary key' => array('miid', 'recipient'),
+    'primary key' => array('mid', 'recipient'),
     'indexes' => array(
       'list' => array('recipient', 'type', 'deleted', 'is_new'),
       'messages' => array('mid', 'recipient', 'type'),
@@ -163,14 +232,14 @@ function umsg_schema_msgdb() {
  * @param $kill
  *  Boolean that indicates if existing users should be removed first.
  */
-function _umsg_create_users($num, $kill, $age = 0) {
+function _umsg_create_users($num, $kill) {
   $url = parse_url($GLOBALS['base_url']);
   if ($kill) {
     $uids = db_select('users', 'u')
-      ->fields('u', array('uid'))
-      ->condition('uid', 1, '>')
-      ->execute()
-      ->fetchAllAssoc('uid');
+            ->fields('u', array('uid'))
+            ->condition('uid', 1, '>')
+            ->execute()
+            ->fetchAllAssoc('uid');
     user_delete_multiple(array_keys($uids));
   }
 
@@ -178,6 +247,7 @@ function _umsg_create_users($num, $kill, $age = 0) {
     $names = array();
     while (count($names) < $num) {
       $name = substr(md5(microtime()), 0, 5) . ' ' . substr(md5(microtime()), 0, 12);
+      //$name = 'testuser' . (string) $num; // to investigate why it's broken.
       $names[$name] = '';
     }
 
@@ -189,7 +259,7 @@ function _umsg_create_users($num, $kill, $age = 0) {
         'pass' => 'test',
         'mail' => str_replace(' ', '', $name) . '@' . 'dummy.invalid',
         'status' => 1,
-        'created' => REQUEST_TIME - mt_rand(0, $age),
+        'created' => REQUEST_TIME - mt_rand(0, 0),
         'roles' => drupal_map_assoc($roles),
         'umsg_dummy_generate' => TRUE,
       );
@@ -198,5 +268,11 @@ function _umsg_create_users($num, $kill, $age = 0) {
     }
   }
 
-  drupal_set_message(t('!num_users created.', array('!num_users' => format_plural($num, '1 user', '@count users'))));
+  $action_string = 'created';
+  if ($num == 0) {
+    $action_string = 'deleted';
+    $num = 'All';
+  }
+
+  drupal_set_message(t('!num_users !action.', array('!num_users' => format_plural($num, '1 user', '@count users'), '!action' => $action_string)));
 }

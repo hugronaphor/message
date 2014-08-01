@@ -8,6 +8,8 @@ dependencies[] = entity
 
 configure=admin/config/messaging/umsg
 
+files[] = api/umsgController.php
+files[] = umsg.theme.inc
 files[] = umsg.pages.inc
 files[] = umsg.admin.inc
-files[] = api/umsgController.php
+

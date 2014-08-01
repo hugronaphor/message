@@ -26,10 +26,28 @@ class UmsgController { // implements UmsgControllerInterface {
 
     // Get current user by default.
     if ($account === NULL && $this->current_user !== NULL) {
+
+      if ($this->current_user === NULL) {
+        return new stdClass();
+      }
+
       $account = $this->current_user;
     }
 
     $passed_ids = !is_array($ids) ? $ids : array();
+
+    switch ($scope) {
+      case 'all':
+        $query = $this->list_all_threads($account);
+
+        break;
+
+      default:
+        break;
+    }
+
+
+    return $query;
 
     //$query = Database::getConnection('default', 'msgdb'); // dont allow joins
     $query = db_select('message', 'm');
@@ -48,6 +66,51 @@ class UmsgController { // implements UmsgControllerInterface {
 
 
     return !empty($entities) ? $entities : array();
+  }
+
+  private function list_all_threads($account) {
+    $query = db_select('message', 'm')->extend('PagerDefault');
+    $query->join('message_index', 'mi', 'mi.mid = m.mid');
+
+    // Create count query;
+    $count_query = db_select('message', 'm');
+    $count_query->addExpression('COUNT(DISTINCT mi.thread_id)', 'count');
+    $count_query->join('message_index', 'mi', 'mi.mid = m.mid');
+    $count_query
+      ->condition('mi.recipient', $account->uid)
+      ->condition('mi.deleted', 0);
+    $query->setCountQuery($count_query);
+//
+//    dsm($query, 'test');
+//    return;
+    // Required columns
+    $query->addField('mi', 'thread_id');
+    //$query->addExpression('MIN(m.subject)', 'subject');
+    $query->addExpression('MAX(m.timestamp)', 'last_updated');
+    $query->addExpression('SUM(mi.is_new)', 'is_new');
+
+    // Load enabled columns
+    $fields = array('participants', 'count', 'thread_started');
+
+    if (in_array('count', $fields)) {
+      // We only want the distinct number of messages in this thread.
+      $query->addExpression('COUNT(distinct mi.mid)', 'count');
+    }
+//    if (in_array('participants', $fields)) {
+//
+//      $query->addExpression("(SELECT GROUP_CONCAT(DISTINCT CONCAT(pmia.type, '_', pmia.recipient))
+//                                     FROM {pm_index} pmia
+//                                     WHERE pmia.type <> 'hidden' AND pmia.thread_id = pmi.thread_id AND pmia.recipient <> :current)", 'participants', array(':current' => $account->uid));
+//    }
+//    if (in_array('thread_started', $fields)) {
+//      $query->addExpression('MIN(pm.timestamp)', 'thread_started');
+//    }
+    return $query
+        ->condition('mi.recipient', $account->uid)
+        ->condition('mi.deleted', 0)
+        ->groupBy('mi.thread_id')
+        //->orderByHeader(_privatemsg_list_headers(array_merge(array('subject', 'last_updated'), $fields)))
+        ->limit(variable_get('umsg_per_page', 25));
   }
 
   public function save($entity, DatabaseTransaction $transaction = NULL) {
@@ -89,7 +152,7 @@ class UmsgController { // implements UmsgControllerInterface {
   private function setDefaultDbActive() {
     db_set_active();
   }
-  
+
   function __destruct() {
     $this->setDefaultDbActive();
   }

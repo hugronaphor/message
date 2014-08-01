@@ -126,8 +126,8 @@ function umsg_menu() {
 //  $items['messages/autocomplete'] = array(
 //    'page callback'    => 'privatemsg_autocomplete',
 //    'file'             => 'umsg.pages.inc',
-//    'access callback'  => 'privatemsg_user_access',
-//    'access arguments' => array('write privatemsg'),
+//    'access callback'  => 'umsg_user_access',
+//    'access arguments' => array('write umsg'),
 //    'type'             => MENU_CALLBACK,
 //  );
   // Admin pages.
@@ -216,8 +216,180 @@ function umsg_unread_count($account = NULL) {
   }
   if (!isset($counts[$account->uid])) {
     $counts[$account->uid] = _privatemsg_assemble_query('unread_count', $account)
-      ->execute()
-      ->fetchField();
+            ->execute()
+            ->fetchField();
   }
   return $counts[$account->uid];
+}
+
+/**
+ * Formats all rows (#options) in the message tableselect thread list.
+ *
+ * Uses @link theming theme patterns @endlink to theme single fields.
+ *
+ * @param $thread
+ *   Array with the row data returned by the database.
+ * @return
+ *   Row definition for use with theme('table')
+ */
+function _umsg_list_thread($tableselect) {
+  foreach ($tableselect['#options'] as $id => $thread) {
+    $row = array();
+    if (!empty($thread['is_new'])) {
+      // Set the css class in the tr tag.
+      $row['#attributes']['class'][] = 'umsg-unread';
+    }
+
+    foreach ($thread as $key => $data) {
+      //dsm('umsg_list_field__' . $key);
+      // First, try to load a specific theme for that field, if not present, use the default.
+      if ($return = theme('umsg_list_field__' . $key, array('thread' => $thread))) {
+        $row[$key] = $return;
+      }
+    }
+
+    $row[$key] = $return;
+
+    $tableselect['#options'][$id] = $row;
+
+    ///dsm($tableselect);
+  }
+  return $tableselect;
+}
+
+function umsg_theme() {
+  $templates = array(
+//    'umsg_view'    => array(
+//      'variables'        => array('message' => NULL),
+//      'template'         => variable_get('umsg_message_view_template', 'umsg-view'), // 'umsg',
+//    ),
+//    'umsg_from'    => array(
+//      'variables'        => array('author' => NULL),
+//      'template'         => 'umsg-from',
+//    ),
+//    'umsg_recipients' => array(
+//      'variables'        => array('message' => NULL),
+//      'template'         => 'umsg-recipients',
+//    ),
+//    'umsg_between' => array(
+//      'variables'        => array('recipients' => NULL),
+//      'template'         => 'umsg-between',
+//    ),
+    // Define pattern for header/field templates. The theme system will register all
+    // theme functions that start with the defined pattern.
+//    'umsg_list_header'  => array(
+//      'file'                  => 'umsg.theme.inc',
+//      'path'                  => drupal_get_path('module', 'umsg'),
+//      'pattern'               => 'umsg_list_header__',
+//      'variables'             => array(),
+//    ),
+    'umsg_list_field' => array(
+      'file' => 'umsg.theme.inc',
+      'path' => drupal_get_path('module', 'umsg'),
+      'pattern' => 'umsg_list_field__',
+      'variables' => array('thread' => array()),
+    ),
+//    'umsg_new_block'  => array(
+//      'file'                  => 'umsg.theme.inc',
+//      'path'                  => drupal_get_path('module', 'umsg'),
+//      'variables'             => array('count'),
+//    ),
+//    'umsg_username'  => array(
+//      'file'                  => 'umsg.theme.inc',
+//      'path'                  => drupal_get_path('module', 'umsg'),
+//      'variables'             => array('recipient' => NULL, 'options' => array()),
+//    ),
+  );
+  // Include the theme file to load the theme suggestions.
+  module_load_include('inc', 'umsg', 'umsg.theme');
+  $templates += drupal_find_theme_functions($templates, array('theme'));
+  return $templates;
+}
+
+/**
+ * Formats a timestamp according to the defines rules.
+ *
+ * Examples/Rules:
+ *
+ * Current hour: 25 min ago
+ * Current day (but not within the hour): 10:30 am
+ * Current year (but not on the same day): Nov 25
+ * Prior years (not the current year): 11/25/08
+ *
+ * @param $timestamp
+ *   UNIX Timestamp.
+ *
+ * @return
+ *   The formatted date.
+ */
+function umsg_format_date($timestamp) {
+  if ($timestamp > ((int) (REQUEST_TIME / 3600)) * 3600) {
+    return t('@interval ago', array('@interval' => format_interval(abs(REQUEST_TIME - $timestamp), 1)));
+  }
+  if ($timestamp > ((int) (REQUEST_TIME / 86400)) * 86400) {
+    return format_date($timestamp, 'umsg_current_day');
+  }
+  if ($timestamp > mktime(0, 0, 0, 1, 0, date('Y'))) {
+    return format_date($timestamp, 'umsg_current_year');
+  }
+  return format_date($timestamp, 'umsg_years');
+}
+
+/**
+ * Implements hook_block_info().
+ */
+function umsg_block_info() {
+  $blocks['umsg_msg_navigation'] = array(
+    'info' => t('Main Message navigation'),
+    'cache' => DRUPAL_CACHE_PER_USER,
+  );
+
+  return $blocks;
+}
+
+/**
+ * Implements hook_block_configure().
+ */
+function umsg_block_configure($delta) {
+  
+}
+
+/**
+ * Implements hook_block_save().
+ */
+function umsg_block_save($delta, $edit = array()) {
+  
+}
+
+/**
+ * Implements hook_block_view().
+ */
+function umsg_block_view($delta) {
+  $block = array();
+  switch ($delta) {
+    case 'umsg_msg_navigation':
+      //$block['subject'] = t('Din aceeasi categorie');
+      $block['content'] = _umsg_get_main_navigation();
+      break;
+  }
+  return $block;
+}
+
+function _umsg_get_main_navigation() {
+  $block = array();
+
+  $links = array();
+  if (umsg_user_access('write umsg')) {
+    $links[] = l(t('Compose message'), 'messages/new');
+  }
+  if (umsg_user_access('read umsg') || privatemsg_user_access('read all user messages')) {
+    $links[] = l(umsg_title_callback(), 'messages');
+  }
+  if (count($links)) {
+    $block = array(
+      //'subject' => t('Private messages'),
+      'content' => theme('item_list', array('items' => $links)),
+    );
+  }
+  return $block;
 }
