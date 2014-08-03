@@ -150,7 +150,7 @@ function umsg_list_page($argument = 'list', $uid = NULL) {
 }
 
 function umsg_list($form, &$form_state, $argument, $account) {
-  //drupal_add_css(drupal_get_path('module', 'umsg') . '/styles/privatemsg-list.css');
+  drupal_add_css(drupal_get_path('module', 'umsg') . '/styles/umsg-list.css');
   // If this is an AJAX request, update $_GET['q'] so that table sorting and
   // similar links are using the correct base path.
   if ($_GET['q'] == 'system/ajax') {
@@ -162,9 +162,9 @@ function umsg_list($form, &$form_state, $argument, $account) {
   }
 
   // Load the table columns.
-  //$columns = array_merge(array('subject', 'last_updated'), array_filter(variable_get('privatemsg_display_fields', array('participants'))));
+  $columns = array('participants','subject', 'last_updated');
   // Load the themed list headers based on the available data.
-  //$headers = _privatemsg_list_headers($columns);
+  $headers = _umsg_list_headers($columns);
 
 
 
@@ -184,11 +184,21 @@ function umsg_list($form, &$form_state, $argument, $account) {
     '#prefix' => '<div id="umsg-list-main-navigation">',
     '#suffix' => '</div>',
     '#markup' => !empty($navigation['content']['content']) ? $navigation['content']['content'] : '',
+    '#weight' => 3,
+  );
+  
+  $form['updated']['contols'] = array(
+    '#type' => 'item',
+    '#prefix' => '<div id="umsg-list-main-contols">',
+    '#suffix' => '</div>',
+    '#markup' => 'test',
+    '#weight' => 4,
   );
 
   $form['updated']['list'] = array(
     '#type' => 'tableselect',
-    '#header' => array('From', 'Body cut', 'last_updated' => 'updated'),
+    '#header' => $headers,
+    //'#header' => array('participants'), // to replace with simple array, no need for theme_
     '#options' => array(),
     '#attributes' => array('class' => array('umsg-list')),
     '#empty' => t('No messages available.'),
@@ -199,7 +209,7 @@ function umsg_list($form, &$form_state, $argument, $account) {
   //$query = _privatemsg_assemble_query('list', $account, $argument);
 
   $umsg = new umsgController();
-  $query = $umsg->load('all');
+  $query = $umsg->load($argument);
 
   $i = 0;
   foreach ($query->execute() as $row) {
@@ -210,8 +220,11 @@ function umsg_list($form, &$form_state, $argument, $account) {
     // Tableselect sorts the options, set a weight so that the order doesn't get
     // changed.
     $form['updated']['list']['#options'][$row->thread_id]['#weight'] = $i++;
+    
+    
+    
   }
-
+  
   //dsm($form['updated']['list']['#options']);
 
   if (!empty($form['updated']['list']['#options'])) {
@@ -227,7 +240,8 @@ function umsg_list($form, &$form_state, $argument, $account) {
   // FOR SOME REASON IT TRY TO QUERY IN SECOND DATABASE
   //$form['updated']['pager'] = array('#markup' => theme('pager'), '#weight' => 20);
 
-
+//drupal_add_js('$("table.umsg-list thead").addClass("tableHeader-processed");', 'inline', 'footer');
+  // table.sticky-header { display: none !important; } 
 
   return $form;
 }
@@ -280,7 +294,7 @@ function privatemsg_list_submit($form, &$form_state) {
   $form_state['input'] = array();
 }
 
-function privatemsg_new($form, &$form_state, $recipients = array(), $subject = '', $thread_id = NULL, $read_all = FALSE) {
+function umsg_new($form, &$form_state, $recipients = array(), $subject = '', $thread_id = NULL, $read_all = FALSE) {
   global $user;
 
   $recipients_plain = '';
@@ -372,7 +386,7 @@ function privatemsg_new($form, &$form_state, $recipients = array(), $subject = '
   }
 
   $form = array(
-    '#access' => (privatemsg_user_access('write privatemsg') || privatemsg_user_access('reply only privatemsg')),
+    '#access' => (umsg_user_access('write privatemsg') || umsg_user_access('reply only privatemsg')),
   );
   if (isset($form_state['privatemsg_preview'])) {
 
@@ -400,11 +414,11 @@ function privatemsg_new($form, &$form_state, $recipients = array(), $subject = '
   );
   if (is_null($thread_id)) {
     $description_array = array();
-    foreach (privatemsg_recipient_get_types() as $name => $type) {
-      if (privatemsg_recipient_access($name, 'write')) {
-        $description_array[] = $type['description'];
-      }
-    }
+//    foreach (privatemsg_recipient_get_types() as $name => $type) {
+//      if (privatemsg_recipient_access($name, 'write')) {
+//        $description_array[] = $type['description'];
+//      }
+//    }
     $description = t('Enter the recipient, separate recipients with commas.');
     $description .= theme('item_list', array('items' => $description_array));
 
@@ -435,16 +449,14 @@ function privatemsg_new($form, &$form_state, $recipients = array(), $subject = '
     $format = $form_state['values']['format'];
   }
   $form['body'] = array(
-    '#type' => 'text_format',
+    '#type' => 'textarea',
     '#title' => t('Message'),
     '#rows' => 6,
     '#weight' => -3,
     '#default_value' => $body,
     '#resizable' => TRUE,
-    '#format' => isset($format) ? $format : NULL,
-    '#after_build' => array('privatemsg_check_format_access'),
   );
-  if (privatemsg_user_access('use tokens in privatemsg') && module_exists('token')) {
+  if (umsg_user_access('use tokens in privatemsg') && module_exists('token')) {
     $form['token'] = array(
       '#type' => 'fieldset',
       '#title' => t('Token browser'),
@@ -535,16 +547,6 @@ function privatemsg_new($form, &$form_state, $recipients = array(), $subject = '
 
   field_attach_form('privatemsg_message', $message, $form, $form_state);
   return $form;
-}
-
-/**
- * After build callback; Hide format widget if user doesn't have permission.
- */
-function privatemsg_check_format_access($element) {
-  if (isset($element['format'])) {
-    $element['format']['#access'] = privatemsg_user_access('select text format for privatemsg');
-  }
-  return $element;
 }
 
 function privatemsg_new_validate($form, &$form_state) {
@@ -698,7 +700,7 @@ function privatemsg_undo_action() {
  *
  * Prevents usernames from being used and/or suggested twice.
  */
-function privatemsg_autocomplete($string) {
+function umsg_autocomplete($string) {
   $names = array();
   // 1: Parse $string and build list of valid user names.
   $fragments = explode(',', $string);
@@ -727,8 +729,7 @@ function privatemsg_autocomplete($string) {
       }
     }
   }
-  // Allow modules to alter the autocomplete list.
-  drupal_alter('privatemsg_autocomplete', $matches, $names, $fragment);
+  
 
   // Format the suggestions.
   $themed_matches = array();

@@ -4,7 +4,6 @@
  * @file
  * Theme functions for umsg.
  */
-
 /**
  * @defgroup theming Theming documentation
  *
@@ -49,7 +48,6 @@
  * not be used by the default theme function theme_umsg_list().
  *
  */
-
 /**
  * @addtogroup theming
  * @{
@@ -78,10 +76,27 @@ function theme_umsg_list_field($thread) {
  */
 function theme_umsg_list_field__participants($variables) {
   $thread = $variables['thread'];
-  $participants = _umsg_generate_user_array($thread['participants'], -4);
-  $field = array();
-  $field['data'] = _umsg_format_participants($participants, 3, TRUE);
+
+  $field = $user_name = array();
+
+  // Parse sql concatinated data.
+  foreach (explode(',', $thread['participants']) as $participant_data) {
+    $participant = explode('_', $participant_data);
+    // This can cause performance issue,
+    // need to decite if we really need to check for deleted users.
+    if ($user = user_load($participant[0])) {
+      $user_name[] = $user->name;
+    }
+    else {
+      $user_name[] = $participant[1];
+    }
+  }
+
+  $field['data'] = implode(', ', $user_name);
   $field['class'][] = 'umsg-list-participants';
+  if (!empty($thread['is_new'])) {
+    $field['class'][] = 'umsg-item-new';
+  }
   return $field;
 }
 
@@ -96,14 +111,13 @@ function theme_umsg_list_field__subject($variables) {
   $options = array();
   $is_new = '';
   if (!empty($thread['is_new'])) {
-    $is_new = theme('mark', array('type' => MARK_NEW));
+    //$is_new = theme('mark', array('type' => MARK_NEW));
+    $is_new = '';
     $options['fragment'] = 'new';
+    $field['class'][] = 'umsg-item-new';
   }
+
   $subject = $thread['subject'];
-  if ($thread['has_tokens']) {
-    $message = umsg_message_load($thread['thread_id']);
-    $subject = umsg_token_replace($subject, array('umsg_message' => $message), array('sanitize' => TRUE, 'umsg-show-span' => FALSE));
-  }
   $field['data'] = l($subject, 'messages/view/' . $thread['thread_id'], $options) . $is_new;
   $field['class'][] = 'umsg-list-subject';
   return $field;
@@ -136,14 +150,18 @@ function theme_umsg_list_field__last_updated($variables) {
   $thread = $variables['thread'];
   $field['data'] = umsg_format_date($thread['last_updated']);
   $field['class'][] = 'umsg-list-date';
+  if (!empty($thread['is_new'])) {
+    $field['class'][] = 'umsg-item-new';
+  }
   return $field;
 }
 
-/**HE
+/* * HE
  * Theme the thread started column.
  *
  * @see theme_umsg_list_field()
  */
+
 function theme_umsg_list_field__thread_started($variables) {
   $thread = $variables['thread'];
   $field = array();
@@ -164,6 +182,7 @@ function theme_umsg_list_field__thread_started($variables) {
  *   this column.
  */
 function theme_umsg_list_header() {
+  
 }
 
 /**
@@ -173,9 +192,9 @@ function theme_umsg_list_header() {
  */
 function theme_umsg_list_header__subject() {
   return array(
-    'data'    => t('Subject'),
-    'field'   => 'subject',
-    'class'   => array('umsg-header-subject'),
+    'data' => t('Subject'),
+    'field' => 'subject',
+    'class' => array('umsg-header-subject'),
     '#weight' => -40,
   );
 }
@@ -187,8 +206,8 @@ function theme_umsg_list_header__subject() {
  */
 function theme_umsg_list_header__count() {
   return array(
-    'data'    => t('Messages'),
-    'class'   => array('umsg-header-count'),
+    'data' => t('Messages'),
+    'class' => array('umsg-header-count'),
     '#weight' => -25,
   );
 }
@@ -200,8 +219,8 @@ function theme_umsg_list_header__count() {
  */
 function theme_umsg_list_header__participants() {
   return array(
-    'data'    => t('Participants'),
-    'class'   => array('umsg-header-participants'),
+    'data' => t('Participants'),
+    'class' => array('umsg-header-participants'),
     '#weight' => -30,
   );
 }
@@ -213,10 +232,10 @@ function theme_umsg_list_header__participants() {
  */
 function theme_umsg_list_header__last_updated() {
   return array(
-    'data'    => t('Last Updated'),
-    'field'   => 'last_updated',
-    'sort'    => 'desc',
-    'class'   => array('umsg-header-lastupdated'),
+    'data' => t('Last Updated'),
+    'field' => 'last_updated',
+    'sort' => 'desc',
+    'class' => array('umsg-header-lastupdated'),
     '#weight' => -20,
   );
 }
@@ -228,9 +247,9 @@ function theme_umsg_list_header__last_updated() {
  */
 function theme_umsg_list_header__thread_started() {
   return array(
-    'data'    => t('Started'),
-    'field'   => 'thread_started',
-    'class'   => array('umsg-header-threadstarted'),
+    'data' => t('Started'),
+    'field' => 'thread_started',
+    'class' => array('umsg-header-threadstarted'),
     '#weight' => -15,
   );
 }
@@ -244,8 +263,7 @@ function theme_umsg_new_block($count) {
     $text = t('Click here to go to your messages.');
   }
   else {
-    $text = format_plural($count, 'You have a new message! Click here to read it.',
-                        'You have @count new messages! Click here to read them.');
+    $text = format_plural($count, 'You have a new message! Click here to read it.', 'You have @count new messages! Click here to read them.');
   }
 
   return l($text, 'messages', array('attributes' => array('id' => 'umsg-new-link')));

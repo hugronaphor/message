@@ -27,7 +27,7 @@ function umsg_install() {
 
   // Generate dummy content.
   if (UMSG_GENERATE_DUMMY_CONTENT) {
-    _umsg_create_users(10, TRUE);
+    _umsg_create_users(5, TRUE);
     // To Generate messages using API.
 
     _umsg_populate_messages();
@@ -35,8 +35,8 @@ function umsg_install() {
 
   // Define default formats for date format types.
   variable_set("date_format_umsg_current_day", 'g:i a');
-  variable_set("date_format_umsg_current_year", 'M j');
-  variable_set("date_format_umsg_years", 'n/j/y');
+  variable_set("date_format_umsg_current_year", 'M d');
+  variable_set("date_format_umsg_years", 'M d Y');
 }
 
 function _umsg_populate_messages() {
@@ -49,6 +49,8 @@ function _umsg_populate_messages() {
           ->execute()
           ->fetchAllAssoc('uid');
 
+  $min_user_key = min($uids);
+
   $recipient_users = user_load_multiple(array_keys($uids));
   db_set_active(UMSG_DB_NAME);
   // Generate messages.
@@ -56,11 +58,14 @@ function _umsg_populate_messages() {
 
     // Prepare message data.
     $message = array();
-    $message['subject'] = 'The test subject from ' . $admin_user->name . ' to ' . $recipient_user->name;
+    //$message['subject'] = 'The test subject from ' . $admin_user->name . ' to ' . $recipient_user->name;
     $message['author'] = $admin_user->uid;
     $message['body'] = substr(md5(microtime()), 0, 10) . ' -- Morbi mattis ullamcorper velit. Etiam ultricies nisi vel augue. Sed fringilla mauris sit amet nibh. Suspendisse faucibus.';
-    $message['format'] = 'plain_text';
-    $message['timestamp'] = time();
+    //$message['format'] = 'plain_text
+
+    // Just create a current time for one item.
+    $the_time = ($min_user_key == $key) ? time() : rand('1164327437', time());
+    $message['timestamp'] = (string) $the_time;
 
     // Insert data.
     $mid = db_insert('message')
@@ -80,7 +85,8 @@ function _umsg_populate_messages() {
       'mid' => $mid,
       'thread_id' => $message->thread_id,
       'recipient' => $admin_user->uid,
-      'type' => 'user', // will be deleted !!!
+      'recipient_name' => $admin_user->name,
+      //'type' => 'user', // will be deleted !!!
       'is_new' => 1,
       'deleted' => 0,
     );
@@ -89,11 +95,21 @@ function _umsg_populate_messages() {
       'mid' => $mid,
       'thread_id' => $message->thread_id,
       'recipient' => $recipient_user->uid,
-      'type' => 'user', // will be deleted !!!
+      'recipient_name' => $recipient_user->name,
+      //'type' => 'user', // will be deleted !!!
       'is_new' => 1,
       'deleted' => 0,
     );
 
+    $msg_index_args_3 = array(
+      'mid' => $mid + 2, // Not sure about that !!!
+      'thread_id' => $message->thread_id,
+      'recipient' => $recipient_user->uid,
+      'recipient_name' => $recipient_user->name,
+      //'type' => 'user', // will be deleted !!!
+      'is_new' => 1,
+      'deleted' => 0,
+    );
 
     // Add registration to sender.
     db_insert('message_index')
@@ -105,8 +121,10 @@ function _umsg_populate_messages() {
             ->fields($msg_index_args_2)
             ->execute();
 
-    // To create reply messages.
-    // ...
+    // Add registration as reply.
+    db_insert('message_index')
+            ->fields($msg_index_args_3)
+            ->execute();
   }
   db_set_active();
 }
@@ -142,24 +160,24 @@ function umsg_schema_msgdb() {
         'not null' => TRUE,
         'unsigned' => TRUE,
       ),
-      'subject' => array(
-        'description' => 'Subject text of the message',
-        'type' => 'varchar',
-        'length' => 255,
-        'not null' => TRUE,
-      ),
+//      'subject' => array(
+//        'description' => 'Subject text of the message',
+//        'type' => 'varchar',
+//        'length' => 255,
+//        'not null' => TRUE,
+//      ),
       'body' => array(
         'description' => 'Body of the message',
         'type' => 'text',
         'not null' => TRUE,
         'size' => 'big',
       ),
-      'format' => array(
-        'type' => 'varchar',
-        'length' => 255,
-        'not null' => FALSE,
-        'description' => 'The {filter_formats}.format of the message text.',
-      ),
+//      'format' => array(
+//        'type' => 'varchar',
+//        'length' => 255,
+//        'not null' => FALSE,
+//        'description' => 'The {filter_formats}.format of the message text.',
+//      ),
       'timestamp' => array(
         'description' => 'Time when the message was sent',
         'type' => 'int',
@@ -171,7 +189,7 @@ function umsg_schema_msgdb() {
   );
 
   $schema['message_index'] = array(
-    'description' => '{pm_index} holds indexing information about messages and recipients for fast retrieval',
+    'description' => '{message_index} holds indexing information about messages and recipients for fast retrieval',
     'fields' => array(
       'mid' => array(
         'description' => 'User Message ID',
@@ -186,10 +204,17 @@ function umsg_schema_msgdb() {
         'unsigned' => TRUE,
       ),
       'recipient' => array(
-        'description' => 'ID of the recipient object, typically user',
+        'description' => 'ID of the recipient user',
         'type' => 'int',
         'not null' => TRUE,
         'unsigned' => TRUE,
+      ),
+      'recipient_name' => array(
+        'description' => 'Name of the recipient user, we need it, in case user was deleted',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => ''
       ),
       'is_new' => array(
         'description' => 'Whether the user has read this message',
@@ -198,6 +223,13 @@ function umsg_schema_msgdb() {
         'not null' => TRUE,
         'unsigned' => TRUE,
       ),
+      'archived' => array(
+        'description' => 'Whether the user has deleted this message',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0
+      ),
       'deleted' => array(
         'description' => 'Whether the user has deleted this message',
         'type' => 'int',
@@ -205,19 +237,19 @@ function umsg_schema_msgdb() {
         'not null' => TRUE,
         'default' => 0
       ),
-      'type' => array(
-        'description' => 'Type of recipient object',
-        'type' => 'varchar',
-        'length' => 255,
-        'not null' => TRUE,
-        'default' => 'user'
-      ),
+//      'type' => array(
+//        'description' => 'Type of recipient object',
+//        'type' => 'varchar',
+//        'length' => 255,
+//        'not null' => TRUE,
+//        'default' => 'user'
+//      ),
     ),
-    'primary key' => array('mid', 'recipient'),
+    'primary key' => array('mid', 'recipient', 'recipient_name'),
     'indexes' => array(
-      'list' => array('recipient', 'type', 'deleted', 'is_new'),
-      'messages' => array('mid', 'recipient', 'type'),
-      'participants' => array('thread_id', 'recipient', 'type', 'deleted'),
+      'list' => array('recipient', 'recipient_name', 'deleted', 'archived', 'is_new'),
+      'messages' => array('mid', 'recipient', 'recipient_name'),
+      'participants' => array('thread_id', 'recipient', 'recipient_name', 'deleted'),
     ),
   );
 
@@ -245,8 +277,10 @@ function _umsg_create_users($num, $kill) {
 
   if ($num > 0) {
     $names = array();
+    $i = 0;
     while (count($names) < $num) {
-      $name = substr(md5(microtime()), 0, 5) . ' ' . substr(md5(microtime()), 0, 12);
+      ++$i;
+      $name = "test_user$i";
       //$name = 'testuser' . (string) $num; // to investigate why it's broken.
       $names[$name] = '';
     }

@@ -82,9 +82,26 @@ function umsg_menu() {
     'page arguments' => array('list'),
     'file' => 'umsg.pages.inc',
     'access callback' => 'umsg_user_access',
-    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'type' => MENU_NORMAL_ITEM,
+  );
+
+  $items['messages/sent'] = array(
+    'title' => 'Sent',
+    'page callback' => 'umsg_list_page',
+    'page arguments' => array('list_sent'),
+    'file' => 'umsg.pages.inc',
+    'access callback' => 'umsg_user_access',
+    'type' => MENU_NORMAL_ITEM,
+  );
+
+  $items['messages/trash'] = array(
+    'title' => 'Trash',
+    'page callback' => 'umsg_list_page',
+    'page arguments' => array('list_trash'),
+    'file' => 'umsg.pages.inc',
+    'access callback' => 'umsg_user_access',
+    'type' => MENU_NORMAL_ITEM,
     'weight' => -10,
-    'menu_name' => 'user-menu',
   );
 //  $items['messages/view/%privatemsg_thread'] = array(
 //    // Set the third argument to TRUE so that we can show access denied instead
@@ -111,25 +128,25 @@ function umsg_menu() {
 //    'weight'           => -10,
 //    'menu_name'        => 'user-menu',
 //  );
-//  $items['messages/new'] = array(
-//    'title'            => 'Write new message',
-//    'page callback'    => 'drupal_get_form',
-//    'page arguments'   => array('privatemsg_new', 2, 3, NULL),
-//    'file'             => 'umsg.pages.inc',
-//    'access callback'  => 'privatemsg_user_access',
-//    'access arguments' => array('write privatemsg'),
-//    'type'             => MENU_LOCAL_ACTION,
-//    'weight'           => -3,
-//    'menu_name'        => 'user-menu',
-//  );
-//  // Auto-completes available user names & removes duplicates.
-//  $items['messages/autocomplete'] = array(
-//    'page callback'    => 'privatemsg_autocomplete',
-//    'file'             => 'umsg.pages.inc',
-//    'access callback'  => 'umsg_user_access',
-//    'access arguments' => array('write umsg'),
-//    'type'             => MENU_CALLBACK,
-//  );
+  $items['messages/new'] = array(
+    'title' => 'Write new message',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('umsg_new', 2, 3, NULL),
+    'file' => 'umsg.pages.inc',
+    'access callback' => 'umsg_user_access',
+    'access arguments' => array('write privatemsg'),
+    'type' => MENU_LOCAL_ACTION,
+    'weight' => -3,
+    'menu_name' => 'user-menu',
+  );
+  // Auto-completes available user names & removes duplicates.
+  $items['messages/autocomplete'] = array(
+    'page callback' => 'umsg_autocomplete',
+    'file' => 'umsg.pages.inc',
+    'access callback' => 'umsg_user_access',
+    'access arguments' => array('write umsg'),
+    'type' => MENU_CALLBACK,
+  );
   // Admin pages.
   $items['admin/config/messaging/umsg'] = array(
     'title' => 'User message settings',
@@ -171,7 +188,7 @@ function umsg_preprocess_html(&$vars) {
  *
  * @ingroup api
  */
-function umsg_user_access($permission = 'read privatemsg', $account = NULL) {
+function umsg_user_access($permission = 'read umsg', $account = NULL) {
   if ($account === NULL) {
     global $user;
     $account = $user;
@@ -188,13 +205,19 @@ function umsg_user_access($permission = 'read privatemsg', $account = NULL) {
   return TRUE;
 }
 
-function umsg_title_callback($title = NULL) {
+function umsg_title_callback($scope = NULL) {
+  
   $count = umsg_unread_count();
 
   if ($count > 0) {
-    return t('Messages (@count new)', array('@count' => $count));
+    if ($scope == 'nav') {
+      return t('Inbox %count', array('%count' => $count));
+    }
+    else {
+      return t('Inbox (@count)', array('@count' => $count));
+    }
   }
-  return t('Messages');
+  return t('Inbox');
 }
 
 /**
@@ -205,21 +228,19 @@ function umsg_title_callback($title = NULL) {
  *
  * @ingroup api
  */
-function umsg_unread_count($account = NULL) {
+function umsg_unread_count($scope = 'index') {
+  global $user;
+  $account = $user;
 
-  return 2;
+  $counts = &drupal_static(__FUNCTION__ . $account->uid . $scope);
 
-  $counts = &drupal_static(__FUNCTION__, array());
-  if (!$account || $account->uid == 0) {
-    global $user;
-    $account = $user;
+  if (!isset($counts)) {
+    // Count Inbox/Archivet unreaded threads.
+    $umsg = new umsgController();
+    $counts = $umsg->countUnread($account, $scope);
   }
-  if (!isset($counts[$account->uid])) {
-    $counts[$account->uid] = _privatemsg_assemble_query('unread_count', $account)
-            ->execute()
-            ->fetchField();
-  }
-  return $counts[$account->uid];
+  
+  return $counts;
 }
 
 /**
@@ -277,12 +298,12 @@ function umsg_theme() {
 //    ),
     // Define pattern for header/field templates. The theme system will register all
     // theme functions that start with the defined pattern.
-//    'umsg_list_header'  => array(
-//      'file'                  => 'umsg.theme.inc',
-//      'path'                  => drupal_get_path('module', 'umsg'),
-//      'pattern'               => 'umsg_list_header__',
-//      'variables'             => array(),
-//    ),
+    'umsg_list_header' => array(
+      'file' => 'umsg.theme.inc',
+      'path' => drupal_get_path('module', 'umsg'),
+      'pattern' => 'umsg_list_header__',
+      'variables' => array(),
+    ),
     'umsg_list_field' => array(
       'file' => 'umsg.theme.inc',
       'path' => drupal_get_path('module', 'umsg'),
@@ -382,9 +403,12 @@ function _umsg_get_main_navigation() {
   if (umsg_user_access('write umsg')) {
     $links[] = l(t('Compose message'), 'messages/new');
   }
-  if (umsg_user_access('read umsg') || privatemsg_user_access('read all user messages')) {
-    $links[] = l(umsg_title_callback(), 'messages');
+  if (umsg_user_access('read umsg') || umsg_user_access('read all user messages')) {
+    $links[] = l(umsg_title_callback('nav'), 'messages/list', array('html' => TRUE));
+    $links[] = l(t('Sent'), 'messages/sent');
+    $links[] = l(t('Trash %trash_count', array('%trash_count' => umsg_unread_count('trash'))), 'messages/trash', array('html' => TRUE));
   }
+
   if (count($links)) {
     $block = array(
       //'subject' => t('Private messages'),
@@ -392,4 +416,39 @@ function _umsg_get_main_navigation() {
     );
   }
   return $block;
+}
+
+/**
+ * Returns a table header definition based on the submitted keys.
+ *
+ * Uses @link theming theme patterns @endlink to theme single headers.
+ *
+ * @param $has_posts
+ *   TRUE when there is at least one row. Decides if the select all checkbox should be displayed.
+ * @param $keys
+ *   Array with the keys which are present in the query/should be displayed.
+ * @return
+ *   Array with header definitions for tablesort_sql and theme('table').
+ */
+function _umsg_list_headers($keys) {
+
+  // theme() doesn't include the theme file for patterns, we need to do it manually.
+  include_once drupal_get_path('module', 'umsg') . '/umsg.theme.inc';
+
+  $header = array();
+  foreach ($keys as $key) {
+    // First, try to load a specific theme for that header, if not present, use the default.
+    if ($return = theme('umsg_list_header__' . $key)) {
+      // The default theme returns nothing, only store the value if we have something.
+      $header[$key] = $return;
+    }
+  }
+  // uasort($header, 'element_sort');
+  // Remove weight column or it will show up in the markup.
+  foreach ($header as $key => $element) {
+    if (isset($header[$key]['#weight'])) {
+      unset($header[$key]['#weight']);
+    }
+  }
+  return $header;
 }
