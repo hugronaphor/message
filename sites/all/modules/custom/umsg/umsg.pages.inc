@@ -19,66 +19,61 @@ require_once 'api/umsgController.php';
  * @return
  *   The FAPI definitions for the thread action form.
  */
-function _privatemsg_action_form($type) {
+function _umsg_action_form($type) {
   $form = array(
     '#prefix' => '<div class="container-inline">',
     '#suffix' => '</div>',
     '#weight' => -5,
   );
   // Display all operations which have a label.
-  $operations = module_invoke_all('privatemsg_thread_operations', $type);
-  drupal_alter('privatemsg_thread_operations', $operations, $type);
+  //$operations = module_invoke_all('privatemsg_thread_operations', $type);#
+  
+    $operations['update'] = array(
+      'label' => t('Update'),
+      'callback' => 'umsg_fake_function',
+      'button' => TRUE,
+    );
+  
+  if (umsg_user_access('delete umsg')) {
+    $operations['delete'] = array(
+      'label' => t('Delete'),
+      'callback' => 'umsg_thread_change_delete',
+      'callback arguments' => array('delete' => 1),
+      'undo callback' => 'umsg_thread_change_delete',
+      'undo callback arguments' => array('delete' => 0),
+      'button' => TRUE,
+    );
+  }
+  
   foreach ($operations as $operation => $array) {
     if (!empty($array['button'])) {
       $form[$operation] = array(
         '#type' => 'submit',
         '#value' => $array['label'],
         '#ajax' => array(
-          'callback' => 'privatemsg_list_js',
-          'wrapper' => 'privatemsg-list-form',
+          'callback' => 'umsg_list_js',
+          'wrapper' => 'umsg-list-form',
           'effect' => 'fade',
         ),
       );
-    }
-    elseif (isset($array['label'])) {
-      $options[$operation] = $array['label'];
-    }
+    }    
   }
-  if (!empty($options)) {
-    array_unshift($options, t('Actions...'));
-    $form['operation'] = array(
-      '#type' => 'select',
-      '#options' => $options,
-      '#ajax' => array(
-        'callback' => 'privatemsg_list_js',
-        'wrapper' => 'privatemsg-list-form',
-        'effect' => 'fade',
-      ),
-      '#executes_submit_callback' => TRUE,
-    );
-    $form['submit'] = array(
-      '#type' => 'submit',
-      '#value' => t('Execute'),
-      '#attributes' => array('class' => array('form-item')),
-      '#states' => array(
-        'visible' => array(
-          // This is never true, button is always hidden when JS is enabled.
-          ':input[name=operation]' => array('value' => 'fake'),
-        ),
-      ),
-    );
-  }
+  
   return $form;
 }
 
 /**
  * AJAX callback to return the form again.
  */
-function privatemsg_list_js($form, $form_state) {
+function umsg_list_js($form, $form_state) {
   return $form['updated'];
 }
 
-function privatemsg_delete($form, $form_state, $thread, $message) {
+function umsg_delete($form, $form_state, $thread, $message) {
+  
+  drupal_set_message('Test delete 3!');
+  
+  
   $form['pmid'] = array(
     '#type' => 'value',
     '#value' => $message->mid,
@@ -88,19 +83,20 @@ function privatemsg_delete($form, $form_state, $thread, $message) {
     '#value' => count($thread['messages']) > 1 ? 'messages/view/' . $message->thread_id : 'messages',
   );
 
-  if (privatemsg_user_access('read all private messages')) {
-    $form['delete_options'] = array(
-      '#type' => 'checkbox',
-      '#title' => t('Delete this message for all users?'),
-      '#description' => t('Tick the box to delete the message for all users.'),
-      '#default_value' => FALSE,
-    );
-  }
+//  if (privatemsg_user_access('read all user messages')) {
+//    $form['delete_options'] = array(
+//      '#type' => 'checkbox',
+//      '#title' => t('Delete this message for all users?'),
+//      '#description' => t('Tick the box to delete the message for all users.'),
+//      '#default_value' => FALSE,
+//    );
+//  }
   return confirm_form($form, t('Are you sure you want to delete this message?'), isset($_GET['destination']) ? $_GET['destination'] : 'messages/view/' . $message->thread_id, t('This action cannot be undone.'), t('Delete'), t('Cancel')
   );
 }
 
-function privatemsg_delete_submit($form, &$form_state) {
+function umsg_delete_submit($form, &$form_state) {
+  drupal_set_message('Test delete 4!');
   global $user;
   $account = clone $user;
 
@@ -151,6 +147,8 @@ function umsg_list_page($argument = 'list', $uid = NULL) {
 
 function umsg_list($form, &$form_state, $argument, $account) {
   drupal_add_css(drupal_get_path('module', 'umsg') . '/styles/umsg-list.css');
+  drupal_add_js(drupal_get_path('module', 'umsg') . '/js/umsg.js');  
+  
   // If this is an AJAX request, update $_GET['q'] so that table sorting and
   // similar links are using the correct base path.
   if ($_GET['q'] == 'system/ajax') {
@@ -166,11 +164,9 @@ function umsg_list($form, &$form_state, $argument, $account) {
   // Load the themed list headers based on the available data.
   $headers = _umsg_list_headers($columns);
 
-
-
   $form = array(
-    //'#list_argument' => $argument,
-    //'#submit' => array('privatemsg_list_submit'),
+    '#list_argument' => $argument,
+    '#submit' => array('umsg_list_submit'),
     'updated' => array(
       '#prefix' => '<div id="umsg-list-form">',
       '#suffix' => '</div>',
@@ -228,31 +224,29 @@ function umsg_list($form, &$form_state, $argument, $account) {
   //dsm($form['updated']['list']['#options']);
 
   if (!empty($form['updated']['list']['#options'])) {
-    //$form['updated']['actions'] = _privatemsg_action_form($argument);
+    $form['updated']['actions'] = _umsg_action_form($argument);
   }
 
   // Save the currently active account, used for actions.
   $form['account'] = array('#type' => 'value', '#value' => $account);
 
-  dsm($form);
+  dsm($form, 'list form');
 
   // Define checkboxes, pager and theme
-  // FOR SOME REASON IT TRY TO QUERY IN SECOND DATABASE
+  // FOR SOME REASON IT TRY TO QUERY IN MSG DATABASE
   //$form['updated']['pager'] = array('#markup' => theme('pager'), '#weight' => 20);
 
-//drupal_add_js('$("table.umsg-list thead").addClass("tableHeader-processed");', 'inline', 'footer');
-  // table.sticky-header { display: none !important; } 
 
   return $form;
 }
 
 /**
- * Process privatemsg_list form submissions.
+ * Process umsg_list form submissions.
  *
  * Execute the chosen action on the selected messages. This function is
  * based on node_admin_nodes_submit().
  */
-function privatemsg_list_submit($form, &$form_state) {
+function umsg_list_submit($form, &$form_state) {
   // Load all available operation definitions.
   $operations = module_invoke_all('privatemsg_thread_operations', $form['#list_argument']);
   drupal_alter('privatemsg_thread_operations', $operations, $form['#list_argument']);

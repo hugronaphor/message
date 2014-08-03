@@ -39,8 +39,6 @@ class UmsgController { // implements UmsgControllerInterface {
     switch ($scope) {
       case 'list':
       case 'list_trash':
-        $query = $this->list_threads($scope, $account);
-        break;
       case 'list_sent':
         $query = $this->list_threads($scope, $account);
         break;
@@ -55,7 +53,6 @@ class UmsgController { // implements UmsgControllerInterface {
 
   private function list_threads($scope, $account) {
 
-    // !!! To figure out for SENT messages.
     $trash_status = ($scope == 'list_trash') ? 1 : 0;
     $sent = ($scope == 'list_sent') ? 1 : 0;
 
@@ -70,25 +67,25 @@ class UmsgController { // implements UmsgControllerInterface {
     if ($sent) {
       $count_query->condition('m.author', $account->uid);
     }
-    else {
-      $count_query->condition('mi.recipient', $account->uid);
-    }
-    dsm($trash_status, '$trash_status');
 
+    $count_query->condition('mi.recipient', $account->uid);
     // Trash messages
-    $query->condition('mi.archived', $trash_status);
-    
+    $count_query->condition('mi.archived', $trash_status);
+
     $count_query->condition('mi.deleted', 0);
     $query->setCountQuery($count_query);
 
     // Required columns
     $query->addField('mi', 'thread_id');
+
+    $query->addExpression('SUM(mi.archived)', 'archivedd');
+    // Strip message field in order to be used as short teaser for thread.
     $query->addExpression('SUBSTRING(m.body, 1, 50)', 'subject');
     $query->addExpression('MAX(m.timestamp)', 'last_updated');
     $query->addExpression('SUM(mi.is_new)', 'is_new');
 
     // Load enabled columns
-    $fields = array('participants', 'subject');
+    $fields = array('participants', 'subject', 'archived');
 
     if (in_array('count', $fields)) {
       // We only want the distinct number of messages in this thread.
@@ -103,28 +100,24 @@ class UmsgController { // implements UmsgControllerInterface {
 //!!    if (in_array('thread_started', $fields)) {
 //      $query->addExpression('MIN(m.timestamp)', 'thread_started');
 //    }
-
     if ($sent) {
       $query->condition('m.author', $account->uid);
     }
-    else {
-      $query->condition('mi.recipient', $account->uid);
-    }
 
+    $query->condition('mi.recipient', $account->uid);
     $query->condition('mi.deleted', 0);
-    $query->condition('mi.archived', $trash_status);
+    // Trash messages.
+    $query->condition('archived', $trash_status);
     $query->groupBy('mi.thread_id');
     $query->orderBy('last_updated', 'DESC');
     $query->limit(variable_get('umsg_per_page', 25));
-
-    //dsm($query->execute());
 
     return $query;
   }
 
   public function countUnread($account, $scope) {
     $trash_status = ($scope == 'trash') ? 1 : 0;
-    
+
     $query = db_select('message_index', 'mi');
     $query->addExpression('COUNT(DISTINCT thread_id)', 'unread_count');
     return $query

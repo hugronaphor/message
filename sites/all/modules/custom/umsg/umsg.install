@@ -64,7 +64,7 @@ function _umsg_populate_messages() {
     //$message['format'] = 'plain_text
 
     // Just create a current time for one item.
-    $the_time = ($min_user_key == $key) ? time() : rand('1164327437', time());
+    $the_time = ($min_user_key == $key) ? time() : rand('1400327437', time());
     $message['timestamp'] = (string) $the_time;
 
     // Insert data.
@@ -224,14 +224,14 @@ function umsg_schema_msgdb() {
         'unsigned' => TRUE,
       ),
       'archived' => array(
-        'description' => 'Whether the user has deleted this message',
+        'description' => 'Whether the user has archived/deleted this message',
         'type' => 'int',
         'unsigned' => TRUE,
         'not null' => TRUE,
         'default' => 0
       ),
       'deleted' => array(
-        'description' => 'Whether the user has deleted this message',
+        'description' => 'Whether the user has defenetly deleted this message',
         'type' => 'int',
         'unsigned' => TRUE,
         'not null' => TRUE,
@@ -249,7 +249,7 @@ function umsg_schema_msgdb() {
     'indexes' => array(
       'list' => array('recipient', 'recipient_name', 'deleted', 'archived', 'is_new'),
       'messages' => array('mid', 'recipient', 'recipient_name'),
-      'participants' => array('thread_id', 'recipient', 'recipient_name', 'deleted'),
+      'participants' => array('thread_id', 'recipient', 'recipient_name', 'deleted', 'archived'),
     ),
   );
 

@@ -452,3 +452,43 @@ function _umsg_list_headers($keys) {
   }
   return $header;
 }
+
+/**
+ * Delete or restore one or multiple threads.
+ *
+ * @param $threads
+ *   Array with thread id's or a single thread id.
+ * @param $delete
+ *   Indicates if the threads should be deleted or restored. 1 => delete, 0 => restore.
+ * @param $account
+ *   User account for which the delete action should be carried out - Set to NULL to delete for all users.
+ */
+function umsg_thread_change_delete($threads, $delete, $account = NULL) {
+  if (!is_array($threads)) {
+    $threads = array($threads);
+  }
+  if (empty($account)) {
+    global $user;
+    $account = clone $user;
+  }
+
+  drupal_set_message('Test delete!');
+  
+  return;
+  
+  
+  // Load all messages of those threads including the deleted.
+  $query = _privatemsg_assemble_query('messages', $threads, $account, TRUE);
+
+  // Delete each message. We need to do that to trigger the delete hook.
+  foreach ($query->execute() as $row) {
+    privatemsg_message_change_delete($row->mid, $delete, $account);
+  }
+
+  if ($delete) {
+    drupal_set_message(format_plural(count($threads), 'Deleted 1 thread.', 'Deleted @count threads.'));
+  }
+  else {
+    drupal_set_message(format_plural(count($threads), 'Restored 1 thread.', 'Restored @count threads.'));
+  }
+}
