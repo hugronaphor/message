@@ -3,9 +3,14 @@
   Drupal.behaviors.checkAllUmsg = {
     attach: function(context, settings) {
 
-// Select the inner-most table in case of nested tables.
-      $('th.select-all', context).closest('table').once('table-select', Drupal.tableSelect);
-
+      // To improve
+      $('#edit-check-all').click(function() {
+        if (this.checked) {
+          $('.umsg-list td input:checkbox').attr('checked', true).parents('tr').addClass('selected');
+        } else {
+          $('.umsg-list td input:checkbox').attr('checked', false).parents('tr').removeClass('selected');
+        }
+      });
 
     }
 

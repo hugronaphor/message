@@ -34,13 +34,16 @@ class UmsgController { // implements UmsgControllerInterface {
       $account = $this->current_user;
     }
 
-    $passed_ids = !is_array($ids) ? $ids : array();
+    $passed_ids = $ids;
 
     switch ($scope) {
       case 'list':
       case 'list_trash':
       case 'list_sent':
         $query = $this->list_threads($scope, $account);
+        break;
+      case 'thread_messages':
+        $query = $this->loadMessages($passed_ids);
         break;
 
       default:
@@ -86,20 +89,14 @@ class UmsgController { // implements UmsgControllerInterface {
 
     // Load enabled columns
     $fields = array('participants', 'subject', 'archived');
-
-    if (in_array('count', $fields)) {
-      // We only want the distinct number of messages in this thread.
-      //$query->addExpression('COUNT(distinct mi.mid)', 'count');
-    }
+ 
     if (in_array('participants', $fields)) {
       // We deal only with one-to-one message (keep this structure for future implementation).
       $query->addExpression("(SELECT GROUP_CONCAT(DISTINCT CONCAT(mia.recipient, '_', mia.recipient_name))
                                      FROM {message_index} mia
                                      WHERE mia.thread_id = mi.thread_id AND mia.recipient <> :current)", 'participants', array(':current' => $account->uid));
     }
-//!!    if (in_array('thread_started', $fields)) {
-//      $query->addExpression('MIN(m.timestamp)', 'thread_started');
-//    }
+
     if ($sent) {
       $query->condition('m.author', $account->uid);
     }
@@ -111,6 +108,37 @@ class UmsgController { // implements UmsgControllerInterface {
     $query->groupBy('mi.thread_id');
     $query->orderBy('last_updated', 'DESC');
     $query->limit(variable_get('umsg_per_page', 25));
+
+    return $query;
+  }
+
+  /**
+   * !!! Something wrong when delete (loads more than have to)
+   * Load all thread messages.
+   * 
+   * @param type $threads
+   * @param type $account
+   * @param type $load_all
+   * @return type
+   */
+  public function loadMessages($threads, $account = NULL, $load_all = FALSE) {
+    $query = db_select('message_index', 'mi');
+    $query->addField('mi', 'mid');
+    $query->join('message', 'm', 'm.mid = mi.mid');
+    if (!$load_all) {
+      $query->condition('mi.archived', 0);
+    }
+
+    $query
+            ->condition('mi.thread_id', $threads)
+            ->groupBy('m.timestamp')
+            ->groupBy('mi.mid')
+            // Order by timestamp first.
+            ->orderBy('m.timestamp', 'ASC')
+            ->orderBy('mi.mid', 'ASC');
+    if ($account) {
+      $query->condition('mi.recipient', $account->uid);
+    }
 
     return $query;
   }
@@ -129,9 +157,41 @@ class UmsgController { // implements UmsgControllerInterface {
                     ->fetchField();
   }
 
-  public function save($entity, DatabaseTransaction $transaction = NULL) {
+  /**
+   * Delete or Archive a message.
+   * 
+   * !At this time we just mark message as deleted,
+   * may be it's better to delete them on cron job?
+   *
+   * @param $pmid
+   *   Message id, pm.mid field.
+   * @param $delete
+   *   Either deletes or restores the thread (1 => archive, 0 => delete)
+   * @param $account
+   *   User account for which the delete action should be carried out.
+   *   Set to NULL to delete for all users.
+   */
+  public function changeMsg($mid, $delete, $account = NULL) {
+    $delete_value = 1;
 
-    dsm('test save');
+    if ($delete) {
+      $affected_field = 'archived';
+    }
+    else {
+      $affected_field = 'deleted';
+    }
+
+    $update = db_update('message_index')
+            ->fields(array($affected_field => $delete_value))
+            ->condition('mid', $mid);
+    if ($account) {
+      $update->condition('recipient', $account->uid);
+    }
+    $update->execute();
+  }
+
+  // Unused.
+  public function save($entity, DatabaseTransaction $transaction = NULL) {
 
     if (isset($entity->is_new)) {
       $entity->created = REQUEST_TIME;

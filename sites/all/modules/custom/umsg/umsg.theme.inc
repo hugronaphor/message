@@ -4,53 +4,10 @@
  * @file
  * Theme functions for umsg.
  */
-/**
- * @defgroup theming Theming documentation
- *
- * It is possible to theme every aspect of umsg with theme functions.
- *
- * For the thread list, so called theme patterns are used to allow flexible
- * theming of the table and its columns (including columns added by other
- * modules).
- *
- * Three requirements have to be fulfilled so a new column, with data, is
- * displayed in the private message list:
- *  - A field needs to be returned by the list query, see @link sql Query Builder @endlink.
- *  - A header theme pattern needs to exist for the field.
- *  - A field theme pattern needs to exist for the field.
- *
- * For each field in the query, Privatemsg will try to call a theme pattern for
- * the header. That theme function can return a table header definition and
- * has the following structure: theme_umsg_list_header_fieldname.
- * @see theme_umsg_list_header()
- *
- * Privatemsg will then do the same for each row, with the field theme pattern.
- * That theme function should return a table field compatible structure, either
- * just a string or an array. The theme function has to have the following
- * name: theme_umsg_list_field_fieldname.
- * @see theme_umsg_list_field()
- *
- * To override an already existing theme function, use the following structure:
- * themename_umsg_list_field_fieldname. It is not necessary to
- * overwrite the header theme function unless that information needs to be
- * changed too.
- *
- * Modules can use the hook_form_alter() hook to alter the data. The form with
- * id "umsg_list" will contain the header, raw and themed field data in
- * the following form:
- * @code
- * $form['#headers']['field_name'] = $header // Array with the header definition;
- * $form['#data']['thread_id'] = $data // Raw data of that thread
- * $form['#rows']['thread_id'] = $row // Themed fields of that thread
- * @endcode
- *
- * Note that the information in #data can be used to populate #rows, but it will
- * not be used by the default theme function theme_umsg_list().
- *
- */
+
 /**
  * @addtogroup theming
- * @{
+ * 
  */
 
 /**

@@ -51,7 +51,7 @@ function umsg_admin_settings() {
   $form['umsg_listing']['umsg_view_max_amount'] = array(
     '#type' => 'select',
     '#title' => t('Number of messages on thread pages'),
-    '#options' => $amounts + array(PRIVATEMSG_UNLIMITED => t('Unlimited')),
+    '#options' => $amounts + array(UMSG_UNLIMITED => t('Unlimited')),
     '#default_value' => variable_get('umsg_view_max_amount', 20),
     '#description' => t('Threads will not show more than this number of messages on a single page.'),
     '#weight' => 10,

@@ -5,7 +5,7 @@
  * Install file for umsg.module
  * 
  * Need to decide if we generally need to be able
- * change database name in admin, as this *have no reason.
+ * change database name in admin, as this probably *have no reason.
  * 
  */
 /**
@@ -28,8 +28,7 @@ function umsg_install() {
   // Generate dummy content.
   if (UMSG_GENERATE_DUMMY_CONTENT) {
     _umsg_create_users(5, TRUE);
-    // To Generate messages using API.
-
+    // TO DO: To Generate messages using API.
     _umsg_populate_messages();
   }
 
@@ -160,24 +159,12 @@ function umsg_schema_msgdb() {
         'not null' => TRUE,
         'unsigned' => TRUE,
       ),
-//      'subject' => array(
-//        'description' => 'Subject text of the message',
-//        'type' => 'varchar',
-//        'length' => 255,
-//        'not null' => TRUE,
-//      ),
       'body' => array(
         'description' => 'Body of the message',
         'type' => 'text',
         'not null' => TRUE,
         'size' => 'big',
       ),
-//      'format' => array(
-//        'type' => 'varchar',
-//        'length' => 255,
-//        'not null' => FALSE,
-//        'description' => 'The {filter_formats}.format of the message text.',
-//      ),
       'timestamp' => array(
         'description' => 'Time when the message was sent',
         'type' => 'int',
@@ -237,13 +224,6 @@ function umsg_schema_msgdb() {
         'not null' => TRUE,
         'default' => 0
       ),
-//      'type' => array(
-//        'description' => 'Type of recipient object',
-//        'type' => 'varchar',
-//        'length' => 255,
-//        'not null' => TRUE,
-//        'default' => 'user'
-//      ),
     ),
     'primary key' => array('mid', 'recipient', 'recipient_name'),
     'indexes' => array(

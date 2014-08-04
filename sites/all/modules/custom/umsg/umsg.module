@@ -4,18 +4,27 @@
  * @file
  * Main module file.
  */
+
 /**
  * Status constant for read messages.
  */
-define('PRIVATEMSG_READ', 0);
+define('UMSG_READ', 0);
 /**
  * Status constant for unread messages.
  */
-define('PRIVATEMSG_UNREAD', 1);
+define('UMSG_UNREAD', 1);
 /**
  * Show unlimited messages in a thread.
  */
-define('PRIVATEMSG_UNLIMITED', 'unlimited');
+define('UMSG_UNLIMITED', 'unlimited');
+
+/**
+ * Fake function callback name.
+ */
+define('UMSG_FAKE_CALLBACK', 'umsg_fake_function');
+
+// Include Query file.
+require_once 'api/umsgController.php';
 
 /**
  * Implements hook_permission().
@@ -39,25 +48,9 @@ function umsg_permission() {
       'description' => t('Write new user messages'),
     ),
     'delete umsg' => array(
-      'title' => t('Delete user messages'),
+      'title' => t('Delete own user messages'),
       'description' => t('Delete user messages'),
     ),
-//    'allow disabling umsg' => array(
-//      'title' => t('Allow disabling user messages'),
-//      'description' => t("Allows user to disable umsg so that they can't receive or send any user messages.")
-//    ),
-//    'reply only umsg' => array(
-//      'title' => t('Reply to user messages'),
-//      'description' => t('Allows to reply to user messages but not send new ones. Note that the write new user messages permission includes replies.')
-//    ),
-//    'use tokens in umsg' => array(
-//      'title' => t('Use tokens in user messages'),
-//      'description' => t("Allows user to use available tokens when sending user messages.")
-//    ),
-//    'select text format for umsg' => array(
-//      'title' => t('Select text format for user messages'),
-//      'description' => t('Allows to choose the text format when sending user messages. Otherwise, the default is used.'),
-//    ),
   );
 }
 
@@ -101,32 +94,25 @@ function umsg_menu() {
     'file' => 'umsg.pages.inc',
     'access callback' => 'umsg_user_access',
     'type' => MENU_NORMAL_ITEM,
-    'weight' => -10,
   );
-//  $items['messages/view/%privatemsg_thread'] = array(
+//  $items['messages/view/%umsg_thread'] = array(
 //    // Set the third argument to TRUE so that we can show access denied instead
 //    // of not found.
 //    'load arguments'   => array(NULL, NULL, TRUE),
 //    'title'            => 'Read message',
-//    'page callback'    => 'privatemsg_view',
+//    'page callback'    => 'umsg_view',
 //    'page arguments'   => array(2),
 //    'file'             => 'umsg.pages.inc',
-//    'access callback'  => 'privatemsg_view_access',
+//    'access callback'  => 'umsg_view_access',
 //    'access arguments' => array(2),
-//    'type'             => MENU_LOCAL_TASK,
-//    'weight'           => -5,
-//    'menu_name'        => 'user-menu',
 //  );
-//  $items['messages/delete/%privatemsg_thread/%privatemsg_message'] = array(
+//  $items['messages/delete/%umsg_thread/%umsg_message'] = array(
 //    'title'            => 'Delete message',
 //    'page callback'    => 'drupal_get_form',
-//    'page arguments'   => array('privatemsg_delete', 2, 3),
+//    'page arguments'   => array('umsg_delete', 2, 3),
 //    'file'             => 'umsg.pages.inc',
-//    'access callback'  => 'privatemsg_user_access',
-//    'access arguments' => array('delete privatemsg'),
-//    'type'             => MENU_CALLBACK,
-//    'weight'           => -10,
-//    'menu_name'        => 'user-menu',
+//    'access callback'  => 'umsg_user_access',
+//    'access arguments' => array('delete umsg'),u
 //  );
   $items['messages/new'] = array(
     'title' => 'Write new message',
@@ -134,10 +120,8 @@ function umsg_menu() {
     'page arguments' => array('umsg_new', 2, 3, NULL),
     'file' => 'umsg.pages.inc',
     'access callback' => 'umsg_user_access',
-    'access arguments' => array('write privatemsg'),
-    'type' => MENU_LOCAL_ACTION,
-    'weight' => -3,
-    'menu_name' => 'user-menu',
+    'access arguments' => array('write umsg'),
+    'type' => MENU_NORMAL_ITEM,
   );
   // Auto-completes available user names & removes duplicates.
   $items['messages/autocomplete'] = array(
@@ -181,7 +165,7 @@ function umsg_preprocess_html(&$vars) {
  * Never allows anonymous user access.
  *
  * @param $permission
- *   Permission string, defaults to read privatemsg
+ *   Permission string, defaults to read umsg
  *
  * @return
  *   TRUE if user has access, FALSE if not
@@ -206,7 +190,7 @@ function umsg_user_access($permission = 'read umsg', $account = NULL) {
 }
 
 function umsg_title_callback($scope = NULL) {
-  
+
   $count = umsg_unread_count();
 
   if ($count > 0) {
@@ -235,11 +219,12 @@ function umsg_unread_count($scope = 'index') {
   $counts = &drupal_static(__FUNCTION__ . $account->uid . $scope);
 
   if (!isset($counts)) {
-    // Count Inbox/Archivet unreaded threads.
+    // Count Inbox/Archived unreaded threads.
     $umsg = new umsgController();
     $counts = $umsg->countUnread($account, $scope);
+    $counts = !empty($counts) ? $counts : t('empty');
   }
-  
+
   return $counts;
 }
 
@@ -262,7 +247,6 @@ function _umsg_list_thread($tableselect) {
     }
 
     foreach ($thread as $key => $data) {
-      //dsm('umsg_list_field__' . $key);
       // First, try to load a specific theme for that field, if not present, use the default.
       if ($return = theme('umsg_list_field__' . $key, array('thread' => $thread))) {
         $row[$key] = $return;
@@ -270,32 +254,13 @@ function _umsg_list_thread($tableselect) {
     }
 
     $row[$key] = $return;
-
     $tableselect['#options'][$id] = $row;
-
-    ///dsm($tableselect);
   }
   return $tableselect;
 }
 
 function umsg_theme() {
   $templates = array(
-//    'umsg_view'    => array(
-//      'variables'        => array('message' => NULL),
-//      'template'         => variable_get('umsg_message_view_template', 'umsg-view'), // 'umsg',
-//    ),
-//    'umsg_from'    => array(
-//      'variables'        => array('author' => NULL),
-//      'template'         => 'umsg-from',
-//    ),
-//    'umsg_recipients' => array(
-//      'variables'        => array('message' => NULL),
-//      'template'         => 'umsg-recipients',
-//    ),
-//    'umsg_between' => array(
-//      'variables'        => array('recipients' => NULL),
-//      'template'         => 'umsg-between',
-//    ),
     // Define pattern for header/field templates. The theme system will register all
     // theme functions that start with the defined pattern.
     'umsg_list_header' => array(
@@ -310,11 +275,6 @@ function umsg_theme() {
       'pattern' => 'umsg_list_field__',
       'variables' => array('thread' => array()),
     ),
-//    'umsg_new_block'  => array(
-//      'file'                  => 'umsg.theme.inc',
-//      'path'                  => drupal_get_path('module', 'umsg'),
-//      'variables'             => array('count'),
-//    ),
 //    'umsg_username'  => array(
 //      'file'                  => 'umsg.theme.inc',
 //      'path'                  => drupal_get_path('module', 'umsg'),
@@ -411,7 +371,7 @@ function _umsg_get_main_navigation() {
 
   if (count($links)) {
     $block = array(
-      //'subject' => t('Private messages'),
+      //'subject' => t(''),
       'content' => theme('item_list', array('items' => $links)),
     );
   }
@@ -454,7 +414,73 @@ function _umsg_list_headers($keys) {
 }
 
 /**
- * Delete or restore one or multiple threads.
+ * Get an array of available thread operations.
+ */
+function umsg_thread_operations($type) {
+  $operations['update'] = array(
+    'label' => t('Update'),
+    'callback' => 'umsg_fake_function',
+    'button' => TRUE,
+  );
+
+  if (umsg_user_access('delete umsg')) {
+    // Detect which delete action to perform.
+    $delete_type = ($type == 'list_trash') ? 0 : 1;
+    $operations['delete'] = array(
+      'label' => t('Delete'),
+      'callback' => 'umsg_thread_delete',
+      // Delete or archive (depending on page).
+      'callback arguments' => array('delete_action' => $delete_type),
+      'button' => TRUE,
+    );
+  }
+
+  return $operations;
+}
+
+/**
+ * Execute an operation on a number of threads.
+ *
+ * @param $operation
+ *   The operation that should be executed.
+ * @param $threads
+ *   An array of thread ids. The array is filtered before used, a checkboxes
+ *   array can be directly passed to it.
+ */
+function umsg_operation_execute($operation, $threads, $account = NULL) {
+
+  // Filter out unchecked threads, this gives us an array of "checked" threads.
+  $threads = array_filter($threads);
+  if (empty($threads)) {
+    // Do not execute anything if there are no checked threads.
+    drupal_set_message(t('You must first select one (or more) messages before you can take that action.'), 'warning');
+    return FALSE;
+  }
+  // Add in callback arguments if present.
+  if (isset($operation['callback arguments'])) {
+    $args = array_merge(array($threads), $operation['callback arguments']);
+  }
+  else {
+    $args = array($threads);
+  }
+
+  // Add the user object to the arguments.
+  if ($account) {
+    $args[] = $account;
+  }
+
+  // Execute the chosen action and pass the defined arguments.
+  call_user_func_array($operation['callback'], $args);
+
+  if (!empty($operation['success message'])) {
+    drupal_set_message($operation['success message']);
+  }
+
+  return TRUE;
+}
+
+/**
+ * Delete or archive one or multiple threads.
  *
  * @param $threads
  *   Array with thread id's or a single thread id.
@@ -463,7 +489,7 @@ function _umsg_list_headers($keys) {
  * @param $account
  *   User account for which the delete action should be carried out - Set to NULL to delete for all users.
  */
-function umsg_thread_change_delete($threads, $delete, $account = NULL) {
+function umsg_thread_delete($threads, $delete, $account = NULL) {
   if (!is_array($threads)) {
     $threads = array($threads);
   }
@@ -472,23 +498,20 @@ function umsg_thread_change_delete($threads, $delete, $account = NULL) {
     $account = clone $user;
   }
 
-  drupal_set_message('Test delete!');
-  
-  return;
-  
-  
   // Load all messages of those threads including the deleted.
-  $query = _privatemsg_assemble_query('messages', $threads, $account, TRUE);
+  $umsg = new umsgController();
+  $query = $umsg->load('thread_messages', $threads);
 
-  // Delete each message. We need to do that to trigger the delete hook.
+  // Delete each message.
   foreach ($query->execute() as $row) {
-    privatemsg_message_change_delete($row->mid, $delete, $account);
+    // $delete -> [1 => archive, 0 => delete]
+    $umsg->changeMsg($row->mid, $delete, $account);
   }
 
   if ($delete) {
-    drupal_set_message(format_plural(count($threads), 'Deleted 1 thread.', 'Deleted @count threads.'));
+    drupal_set_message(format_plural(count($threads), 'Archived 1 thread.', 'Archived @count threads.'));
   }
   else {
-    drupal_set_message(format_plural(count($threads), 'Restored 1 thread.', 'Restored @count threads.'));
+    drupal_set_message(format_plural(count($threads), 'Deleted 1 thread.', 'Deleted @count threads.'));
   }
 }

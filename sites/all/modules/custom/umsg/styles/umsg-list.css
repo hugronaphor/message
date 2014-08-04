@@ -1,6 +1,10 @@
 table.sticky-header { 
-  display: none !important; 
+  display: none !important;
 } 
+
+table.umsg-list thead {
+  display: none !important;
+}
 
 #umsg-list-main-navigation {
   width: 25%;
@@ -67,31 +71,6 @@ table.umsg-list .umsg-item-new {
   font-weight: bold;
 }
 
-
-
-
-
-
-.privatemsg-unread td {
-  font-weight: bold;
-}
-
-.privatemsg-unread .privatemsg-list-subject .marker {
-  font-weight: lighter;
-}
-
-.privatemsg-list-count {
-  text-align: center;
-}
-
 .umsg-list-subject {
   min-width: 35%;
-}
-
-.privatemsg-list-date {
-  min-width: 20%;
-}
-
-form#privatemsg-list div.container-inline * {
-  margin: 0 2px;
 }
