@@ -248,7 +248,3 @@ function theme_umsg_username($variables) {
     return theme('username', array('account' => $recipient));
   }
 }
-
-/**
- * @}
- */

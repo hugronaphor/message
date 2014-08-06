@@ -4,7 +4,6 @@
  * @file
  * Main module file.
  */
-
 /**
  * Status constant for read messages.
  */
@@ -115,7 +114,7 @@ function umsg_menu() {
 //    'access arguments' => array('delete umsg'),u
 //  );
   $items['messages/new'] = array(
-    'title' => 'Write new message',
+    'title' => t('Compose a new'),
     'page callback' => 'drupal_get_form',
     'page arguments' => array('umsg_new', 2, 3, NULL),
     'file' => 'umsg.pages.inc',
@@ -275,11 +274,11 @@ function umsg_theme() {
       'pattern' => 'umsg_list_field__',
       'variables' => array('thread' => array()),
     ),
-//    'umsg_username'  => array(
-//      'file'                  => 'umsg.theme.inc',
-//      'path'                  => drupal_get_path('module', 'umsg'),
-//      'variables'             => array('recipient' => NULL, 'options' => array()),
-//    ),
+    'umsg_username' => array(
+      'file' => 'umsg.theme.inc',
+      'path' => drupal_get_path('module', 'umsg'),
+      'variables' => array('recipient' => NULL, 'options' => array()),
+    ),
   );
   // Include the theme file to load the theme suggestions.
   module_load_include('inc', 'umsg', 'umsg.theme');
@@ -514,4 +513,100 @@ function umsg_thread_delete($threads, $delete, $account = NULL) {
   else {
     drupal_set_message(format_plural(count($threads), 'Deleted 1 thread.', 'Deleted @count threads.'));
   }
+}
+
+/**
+ * Generate array of user objects based on a string.
+ *
+ *
+ * @param $userstring
+ *   A string with user id, for example 1,2,4. Returned by the list query.
+ *
+ * @return
+ *   Array with user objects.
+ */
+function _umsg_generate_user_array($string, $slice = NULL) {
+  // Convert user uid list (uid1,uid2,uid3) into an array. If $slice is not NULL
+  // pass that as argument to array_slice(). For example, -4 will only load the
+  // last four users.
+  // This is done to avoid loading user objects that are not displayed, for
+  // obvious performance reasons.
+  $users = explode(',', $string);
+  if (!is_null($slice)) {
+    $users = array_slice($users, $slice);
+  }
+  $participants = array();
+  foreach ($users as $uid) {
+    // If it is an integer, it is a user id.
+    if ((int) $uid > 0) {
+      $user_ids = privatemsg_user_load_multiple(array($uid));
+      if ($account = array_shift($user_ids)) {
+        $participants[$account->uid] = $account;
+      }
+    }
+    elseif (strpos($uid, '_') !== FALSE) {
+      list($type, $id) = explode('_', $uid);
+      $type_info = privatemsg_recipient_get_type($type);
+      if ($type_info && isset($type_info['load']) && is_callable($type_info['load'])) {
+        $temp_load = $type_info['load'](array($id));
+        if ($participant = array_shift($temp_load)) {
+          $participants[$account->uid] = $participant;
+        }
+      }
+    }
+  }
+  return $participants;
+}
+
+/**
+ * Implements callback_recipient_autocomplete().
+ */
+function umsg_user_autocomplete($fragment) {
+  global $user;
+  // First, load all possible uids.
+  $uids = db_select('users', 'u')
+          ->fields('u', array('uid'))
+          ->condition('u.name', $fragment . '%', 'LIKE')
+          ->condition('u.status', 0, '<>')
+          // exclude sef-user.
+          ->condition('u.uid', $user->uid, '<>')
+          ->orderBy('u.name', 'ASC')
+          ->range(0, 10)
+          ->execute()
+          ->fetchCol();
+  // Load the corresponding users, make sure to not load any duplicates.
+  $accounts = user_load_multiple(array_unique($uids));
+
+  // Return them in an array.
+  $suggestions = array();
+  foreach ($accounts as $account) {
+    $account->type = 'user';
+    $account->recipient = $account->uid;
+    $suggestions[$account->uid] = $account;
+  }
+
+  return $suggestions;
+}
+
+/**
+ * Format a single participant.
+ *
+ * @param $participant
+ *   The participant object to format.
+ *
+ * @ingroup types.
+ */
+function umsg_recipient_format($recipient, $options = array()) {
+
+  return theme('umsg_username', array('recipient' => $recipient, 'options' => $options));
+
+//  if (!isset($recipient->type)) {
+//    $recipient->type = 'user';
+//    $recipient->recipient = $recipient->uid;
+//  }
+//  $type = privatemsg_recipient_get_type($recipient->type);
+//  if (isset($type['format'])) {
+//    return theme('umsg_username', array('recipient' => $recipient, 'options' => $options));
+//  }
+//  return NULL;
 }
