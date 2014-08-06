@@ -121,9 +121,9 @@ function _umsg_populate_messages() {
             ->execute();
 
     // Add registration as reply.
-    db_insert('message_index')
-            ->fields($msg_index_args_3)
-            ->execute();
+//    db_insert('message_index')
+//            ->fields($msg_index_args_3)
+//            ->execute();
   }
   db_set_active();
 }

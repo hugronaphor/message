@@ -12,10 +12,6 @@ define('UMSG_READ', 0);
  * Status constant for unread messages.
  */
 define('UMSG_UNREAD', 1);
-/**
- * Show unlimited messages in a thread.
- */
-define('UMSG_UNLIMITED', 'unlimited');
 
 /**
  * Fake function callback name.
@@ -94,17 +90,15 @@ function umsg_menu() {
     'access callback' => 'umsg_user_access',
     'type' => MENU_NORMAL_ITEM,
   );
-//  $items['messages/view/%umsg_thread'] = array(
-//    // Set the third argument to TRUE so that we can show access denied instead
-//    // of not found.
-//    'load arguments'   => array(NULL, NULL, TRUE),
-//    'title'            => 'Read message',
-//    'page callback'    => 'umsg_view',
-//    'page arguments'   => array(2),
-//    'file'             => 'umsg.pages.inc',
-//    'access callback'  => 'umsg_view_access',
-//    'access arguments' => array(2),
-//  );
+  $items['messages/view/%umsg_thread'] = array(
+    //'load arguments'   => array(NULL, NULL),
+    'title'            => 'Title of thread?',
+    'page callback'    => 'umsg_view',
+    'page arguments'   => array(2),
+    'file'             => 'umsg.pages.inc',
+//    'access callback'  => 'umsg_user_access',
+//    'access arguments' => array('read umsg'),
+  );
 //  $items['messages/delete/%umsg_thread/%umsg_message'] = array(
 //    'title'            => 'Delete message',
 //    'page callback'    => 'drupal_get_form',
@@ -609,4 +603,51 @@ function umsg_recipient_format($recipient, $options = array()) {
 //    return theme('umsg_username', array('recipient' => $recipient, 'options' => $options));
 //  }
 //  return NULL;
+}
+
+function _umsg_validate_message(&$message, $form = FALSE) {
+  $messages = array('error' => array(), 'warning' => array());
+  if (!(umsg_user_access('write umsg', $message->author))) {
+    // no need to do further checks in this case...
+    if ($form) {
+      form_set_error('author', t('You are not allowed to write messages.'));
+      return array(
+        'success' => FALSE,
+        'messages' => $messages,
+      );
+    }
+    else {
+      $messages['error'][] = t('@user is not allowed to write messages.', array('@user' => $message->author));
+      return array(
+        'success' => FALSE,
+        'messages' => $messages,
+      );
+    }
+  }
+
+  // Don't allow replies without a body.
+  if (!empty($message->thread_id) && ($message->body === NULL || $message->body === '')) {
+    if ($form) {
+      form_set_error('body', t('You must include a message in your reply.'));
+    }
+    else {
+      $messages['error'][] = t('A message must be included in your reply.');
+    }
+  }
+
+  if (empty($message->recipients)) {
+    if ($form) {
+      form_set_error('recipient', t('You must include a valid recipient.'));
+    }
+    else {
+      $messages['error'][] = t('A valid recipient must be included with the message.');
+    }
+  }
+
+  // Check if there are errors in $messages or if $form is TRUE, there are form errors.
+  $success = empty($messages['error']) || ($form && count((array) form_get_errors()) > 0);
+  return array(
+    'success' => $success,
+    'messages' => $messages,
+  );
 }

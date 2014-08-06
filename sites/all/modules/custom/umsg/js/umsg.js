@@ -4,7 +4,7 @@
     attach: function(context, settings) {
 
       // To improve
-      $('#edit-check-all').click(function() {
+      $('#edit-check-all, #edit-check-all--2').click(function() {
         if (this.checked) {
           $('.umsg-list td input:checkbox').attr('checked', true).parents('tr').addClass('selected');
         } else {

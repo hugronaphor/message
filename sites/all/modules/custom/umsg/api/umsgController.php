@@ -89,7 +89,7 @@ class UmsgController { // implements UmsgControllerInterface {
 
     // Load enabled columns
     $fields = array('participants', 'subject', 'archived');
- 
+
     if (in_array('participants', $fields)) {
       // We deal only with one-to-one message (keep this structure for future implementation).
       $query->addExpression("(SELECT GROUP_CONCAT(DISTINCT CONCAT(mia.recipient, '_', mia.recipient_name))
@@ -148,13 +148,16 @@ class UmsgController { // implements UmsgControllerInterface {
 
     $query = db_select('message_index', 'mi');
     $query->addExpression('COUNT(DISTINCT thread_id)', 'unread_count');
-    return $query
-                    ->condition('mi.deleted', 0)
-                    ->condition('mi.archived', $trash_status)
-                    ->condition('mi.is_new', 1)
-                    ->condition('mi.recipient', $account->uid)
-                    ->execute()
-                    ->fetchField();
+
+    $query->condition('mi.deleted', 0);
+    $query->condition('mi.archived', $trash_status);
+    // We count all messages in trash and unreaded in inbox.
+    if (!$trash_status) {
+      $query->condition('mi.is_new', 1);
+    }
+
+    $query->condition('mi.recipient', $account->uid);
+    return $query->execute()->fetchField();
   }
 
   /**
@@ -190,30 +193,101 @@ class UmsgController { // implements UmsgControllerInterface {
     $update->execute();
   }
 
-  // Unused.
-  public function save($entity, DatabaseTransaction $transaction = NULL) {
-
-    if (isset($entity->is_new)) {
-      $entity->created = REQUEST_TIME;
-    }
-    $entity->changed = REQUEST_TIME;
-    //return parent::save($entity, $transaction);
-  }
-
   /**
-   * Create and return a new entity.
+   * Internal function to save a message.
+   *
+   * @param $message
+   *   A $message array with the data that should be saved. If a thread_id exists
+   *   it will be created as a reply to an existing thread. If not, a new thread
+   *   will be created.
+   *
+   * @return
+   *   The updated $message array.
    */
-//  public function create(array $values = array()) {
-//    
-//    dsm('test 2345');
-//    
-//    $entity = new stdClass();
-//    $entity->recipien = 2;
-//    $entity->basic_id = 0;
-//    $entity->bundle_type = 'first_example_bundle';
-//    $entity->item_description = '';
-//    return $entity;
-//  }
+  public function send($message) {
+
+    dsm($message, 'controller message obj');
+//  return;
+    $transaction = db_transaction();
+    try {
+      //drupal_alter('privatemsg_message_presave', $message);
+      //field_attach_presave('privatemsg_message', $message);
+
+      $query = db_insert('message_index')->fields(array('mid', 'thread_id', 'recipient', 'is_new', 'archived', 'deleted'));
+      if (isset($message->thread_id)) {
+        // The message was sent in read all mode, add the author as recipient to all
+        // existing messages.
+        dsm('to do !!!');
+//      $query_messages = _privatemsg_assemble_query('messages', array($message->thread_id), NULL);
+//      foreach ($query_messages->execute()->fetchCol() as $mid) {
+//        $query->values(array(
+//          'mid' => $mid,
+//          'thread_id' => $message->thread_id,
+//          'recipient' => $message->author->uid,
+//          'type' => 'user',
+//          'is_new' => 0,
+//          'deleted' => 0,
+//        ));
+//      }
+      }
+
+      // 1) Save the message body first.
+      $args = array();
+      $args['author'] = $message->author->uid;
+      $args['body'] = $message->body;
+      $args['timestamp'] = $message->timestamp;
+      $mid = db_insert('message')
+              ->fields($args)
+              ->execute();
+      $message->mid = $mid;
+
+      // Thread ID is the same as the mid if it's the first message in the thread.
+      if (!isset($message->thread_id)) {
+        $message->thread_id = $mid;
+      }
+
+      // 2) Save message to recipients.
+      // Each recipient gets a record in the message_index table.
+      foreach ($message->recipients as $recipient) {
+        $query->values(array(
+          'mid' => $mid,
+          'thread_id' => $message->thread_id,
+          'recipient' => $recipient->uid,
+          'recipient_name' => $recipient->name,
+          'is_new' => UMSG_UNREAD,
+          'archived' => 0,
+          'deleted' => 0,
+        ));
+      }
+
+
+      // We only want to add the author to the message_index table, if the message has
+      // not been sent directly to him.
+      if (!isset($message->recipients[$message->author->uid])) {
+        $query->values(array(
+          'mid' => $mid,
+          'thread_id' => $message->thread_id,
+          'recipient' => $message->author->uid,
+          'recipient_name' => $message->author->name,
+          'is_new' => UMSG_READ,
+          'archived' => 0,
+          'deleted' => 0,
+        ));
+      }
+      $query->execute();
+
+//    module_invoke_all('privatemsg_message_insert', $message);
+//    field_attach_insert('privatemsg_message', $message);
+    }
+    catch (Exception $exception) {
+      $transaction->rollback();
+      watchdog_exception('umsg', $exception);
+      throw $exception;
+    }
+
+    // If we reached here that means we were successful at writing all messages to db.
+    return $message;
+  }
 
   private function getCurrentUser() {
     global $user;
