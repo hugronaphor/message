@@ -685,12 +685,7 @@ function umsg_umsg_view_template() {
   );
 }
 
-//function template_preprocess_umsg_view(&$vars) {
-  function template_preprocess_umsg_view($vars) {
-    
-  dsm('offdoamne');
-  
-
+function template_preprocess_umsg_view(&$vars) {
   global $user;
 
   $message = $vars['message'];
@@ -698,36 +693,26 @@ function umsg_umsg_view_template() {
   $vars['message_classes'] = isset($message->classes) ? $message->classes : array();
   $vars['thread_id'] = isset($message->thread_id) ? $message->thread_id : NULL;
   $vars['author_picture'] = theme('user_picture', array('account' => $message->author));
-  // Directly address the current user if he is the author.
-  if ($user->uid == $message->author->uid) {
-    $vars['author_name_link'] = t('You');
-  }
-  else {
-    $vars['author_name_link'] = umsg_recipient_format($message->author);
-  }
+  $vars['author_name_link'] = umsg_recipient_format($message->author);
   $vars['message_timestamp'] = umsg_format_date($message->timestamp);
 
   $message->content = array(
     '#view_mode' => 'message',
     'body' => array(
-      '#markup' => check_markup($message->body, $message->format),
+      '#markup' => $message->body,
       '#weight' => -4,
     ),
   );
 
-  // Build fields content.
-//  field_attach_prepare_view('privatemsg_message', array($vars['mid'] => $message), 'message');
-//  $message->content += field_attach_view('privatemsg_message', $message, 'message');
-
   // Render message body.
-  $vars['message_body'] =  drupal_render($message->content);
+  $vars['message_body'] = drupal_render($message->content);
   if (isset($vars['mid']) && isset($vars['thread_id']) && umsg_user_access('delete umsg')) {
     $vars['message_actions'][] = array('title' => t('Delete'), 'href' => 'messages/delete/' . $vars['thread_id'] . '/' . $vars['mid']);
   }
   $vars['message_anchors'][] = 'privatemsg-mid-' . $vars['mid'];
   if (!empty($message->is_new)) {
     $vars['message_anchors'][] = 'new';
-    $vars['new'] = drupal_ucfirst(t('new'));
+    $vars['new'] = TRUE;
   }
 
   $vars['message_actions'] = !empty($vars['message_actions']) ? theme('links', array('links' => $vars['message_actions'], 'attributes' => array('class' => array('privatemsg-message-actions', 'links', 'inline')))) : '';
@@ -736,5 +721,4 @@ function umsg_umsg_view_template() {
   foreach ($vars['message_anchors'] as $anchor) {
     $vars['anchors'] .= '<a name="' . $anchor . '"></a>';
   }
-  
 }

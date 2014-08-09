@@ -156,19 +156,12 @@ class UmsgController { // implements UmsgControllerInterface {
 
       if (!array_key_exists($thread_id, $threads[$account->uid])) {
         // Load the list of participants.
-        //!!! $thread['participants'] = _privatemsg_load_thread_participants($thread_id, $account, FALSE, 'view');
-        $thread['read_all'] = FALSE;
-        if (empty($thread['participants']) && umsg_user_access('read all user messages', $account)) {
-          $thread['read_all'] = TRUE;
-          // Load all participants.
-          //$thread['participants'] = _privatemsg_load_thread_participants($thread_id, FALSE, FALSE, 'view');
-        }
+        $thread['participants'] = $this->getThreadParticipants($thread_id, $account, FALSE, 'view');
 
         // Load messages returned by the messages query with privatemsg_message_load_multiple().
         // $query = _privatemsg_assemble_query('messages', array($thread_id), $thread['read_all'] ? NULL : $account);
 
         $query = $this->loadMessages(array($thread_id), $account);
-
         // Use subquery to bypass group by since it is not possible to alter
         // existing GROUP BY statements.
         $countQuery = db_select($query);
@@ -238,7 +231,6 @@ class UmsgController { // implements UmsgControllerInterface {
         }
 
 
-
         $thread['messages'] = $this->message_load_multiple($query->execute()->fetchCol(), $account);
 
         // If there are no messages, don't allow access to the thread.
@@ -246,8 +238,7 @@ class UmsgController { // implements UmsgControllerInterface {
           $thread = FALSE;
         }
         else {
-
-          // General data, assume subject is the same for all messages of that thread.
+          // General data, assume subject is the same.
           $thread['user'] = $account;
           $message = current($thread['messages']);
           $thread['subject'] = $thread['subject-original'] = $this->buildSubject($message->body);
@@ -258,6 +249,19 @@ class UmsgController { // implements UmsgControllerInterface {
     }
     return FALSE;
   }
+  
+  /**
+ * Load all participants of a thread.
+ *
+ */
+function getThreadParticipants($thread_id, $account = NULL) {
+  $query = db_select('message_index', 'mi');
+  $query
+    ->fields('mi', array('recipient', 'recipient_name'))
+    ->condition('mi.thread_id', $thread_id);
+
+  return $query->groupBy('mi.recipient')->execute()->fetchAll();
+}
 
   private function buildSubject($string) {
     return t('Subject') . ': ' . substr($string, 0, UMSG_STRIP_BODY) . '...';
@@ -435,17 +439,17 @@ class UmsgController { // implements UmsgControllerInterface {
       // 2) Save message to recipients.
       // Each recipient gets a record in the message_index table.
       foreach ($message->recipients as $recipient) {
+        dsm($recipient);
         $query->values(array(
           'mid' => $mid,
           'thread_id' => $message->thread_id,
           'recipient' => $recipient->uid,
-          'recipient_name' => $recipient->name,
+          'recipient_name' => (string) $recipient->name,
           'is_new' => UMSG_UNREAD,
           'archived' => 0,
           'deleted' => 0,
         ));
       }
-
 
       // We only want to add the author to the message_index table, if the message has
       // not been sent directly to him.
@@ -454,7 +458,7 @@ class UmsgController { // implements UmsgControllerInterface {
           'mid' => $mid,
           'thread_id' => $message->thread_id,
           'recipient' => $message->author->uid,
-          'recipient_name' => $message->author->name,
+          'recipient_name' => (string) $message->author->name,
           'is_new' => UMSG_READ,
           'archived' => 0,
           'deleted' => 0,

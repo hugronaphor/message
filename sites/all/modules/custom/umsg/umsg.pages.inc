@@ -183,7 +183,7 @@ function umsg_list($form, &$form_state, $argument, $account) {
   // Define checkboxes, pager and theme
   // FOR SOME REASON IT TRY TO QUERY IN MSG DATABASE
   // db_set_active();
-   $form['updated']['pager'] = array('#markup' => theme('pager'), '#weight' => 2);
+  $form['updated']['pager'] = array('#markup' => theme('pager'), '#weight' => 2);
 
   return $form;
 }
@@ -242,6 +242,219 @@ function umsg_list_submit($form, &$form_state) {
 
 // --------------------------------------------- //
 
+function umsg_new_validate($form, &$form_state) {
+  
+  // The actual message that is being sent, we create this during validation and
+  // pass to submit to send out.
+  $message = (object) $form_state['values'];
+  $message->mid = 0;
+  $message->body = isset($message->body) ? $message->body : '';
+  $message->timestamp = REQUEST_TIME;
+
+  // Only parse the user string for a new thread.
+  // Used for new thread.
+  if (!isset($message->thread_id)) {
+    $recipient_obj = user_load_by_name($message->recipient);
+
+    // Check for valid user.
+    if (isset($recipient_obj->uid)) {
+      $message->recipients = array($recipient_obj->uid => $recipient_obj);
+    }
+    else {
+      $message->recipients = array();
+    }
+  }
+  // Used for existing thread reply.
+  else {
+    // Load participants. Limit recipients to visible unless read_all is TRUE. !!!
+    //$message->recipients = _umsg_load_thread_participants($message->thread_id, $message->read_all ? FALSE : $message->author);
+  }
+
+  $validated = _umsg_validate_message($message, TRUE);
+  foreach ($validated['messages'] as $type => $texts) {
+    foreach ($texts as $text) {
+      drupal_set_message($text, $type);
+    }
+  }
+  $form_state['validate_built_message'] = $message;
+}
+
+/**
+ * Submit callback for the privatemsg_new form.
+ */
+function umsg_new_submit($form, &$form_state) {
+
+  $message = $form_state['validate_built_message'];
+
+  // Format each recipient.
+  // As we use une-to-one user message, get first ant unique name.
+  $recipient_first = reset($message->recipients);
+  $recipient = $recipient_first->name;
+
+  try {
+    $umsg = new umsgController();
+    $message = $umsg->send($message);
+//    $message = _umsg_send($message);
+    //_privatemsg_handle_recipients($message->mid, $message->recipients); // probably we don't need it !!!
+    drupal_set_message(t('A message has been sent to !recipient.', array('!recipient' => $recipient)));
+    // Only redirect on new threads. !!!
+    if ($message->mid == $message->thread_id || variable_get('privatemsg_default_redirect_reply', FALSE)) {
+      $redirect = variable_get('privatemsg_default_redirect', '<new-message>');
+      if ($redirect == '<new-message>' || (!empty($_REQUEST['destination']) && $_REQUEST['destination'] == '[new-message]')) {
+        if (!empty($_REQUEST['destination']) && $_REQUEST['destination'] == '[new-message]') {
+          // Remove GET param so that drupal_goto() uses the redirect from
+          // $form_state.
+          unset($_GET['destination']);
+        }
+        // Forward to the new message in the thread.
+        $form_state['redirect'] = array('messages/view/' . $message->thread_id, array('fragment' => 'usg-mid-' . $message->mid));
+      }
+      elseif (!empty($redirect)) {
+        $form_state['redirect'] = $redirect;
+      }
+    }
+  } catch (Exception $e) {
+    if (error_displayable()) {
+      require_once DRUPAL_ROOT . '/includes/errors.inc';
+      $variables = _drupal_decode_exception($e);
+      drupal_set_message(t('Failed to send a message to !recipients. %type: !message in %function (line %line of %file).', array('!recipients' => $recipient) + $variables), 'error');
+    }
+    else {
+      drupal_set_message(t('Failed to send a message to !recipients. Contact your site administrator.', $recipient), 'error');
+    }
+  }
+}
+
+/**
+ * Return autocomplete results for usernames.
+ */
+function umsg_autocomplete($string) {
+  // Parse $string and build list of valid user names.
+  $matches = array();
+  $return = umsg_user_autocomplete($string);
+
+  if (is_array($return) && !empty($return)) {
+    $matches = $return;
+  }
+
+  // Format the suggestions.
+  $themed_matches = array();
+  foreach ($matches as $key => $match) {
+    $themed_matches[$key] = umsg_recipient_format($match, array('plain' => TRUE));
+  }
+
+  $suggestions = array();
+  foreach ($themed_matches as $match) {
+    $suggestions[$match] = $match;
+  }
+
+  // convert to object to prevent drupal bug, see http://drupal.org/node/175361
+  drupal_json_output((object) $suggestions);
+}
+
+/**
+ * Menu callback for viewing a thread.
+ *
+ * @param $thread
+ *   The thread id
+ * @return
+ *   The page content.
+ */
+function umsg_view($thread) {
+
+  $umsg = new umsgController();
+  $thread = $umsg->threadLoad($thread);
+  db_set_active(); // without it, theme functions break db
+
+  drupal_set_title($thread['subject']);
+
+  $content = array(
+    '#thread' => $thread,
+  );
+
+  if ($thread['to'] != $thread['message_count'] || !empty($thread['start'])) {
+    // Generate paging links.
+    $older = '';
+    if (isset($thread['older_start'])) {
+      $options = array(
+        'query' => array('start' => $thread['older_start']),
+        'title' => t('Display older messages'),
+      );
+      $older = l(t('<<'), 'messages/view/' . $thread['thread_id'], $options);
+    }
+    $newer = '';
+    if (isset($thread['newer_start'])) {
+      $options = array(
+        'query' => array('start' => $thread['newer_start']),
+        'title' => t('Display newer messages'),
+      );
+      $newer = l(t('>>'), 'messages/view/' . $thread['thread_id'], $options);
+    }
+    $substitutions = array('@from' => $thread['from'], '@to' => $thread['to'], '@total' => $thread['message_count'], '!previous_link' => $older, '!newer_link' => $newer);
+    $title = t('!previous_link Displaying messages @from - @to of @total !newer_link', $substitutions);
+    $content['pager'] = array(
+      '#markup' => trim($title),
+      '#prefix' => '<div class="privatemsg-view-pager">',
+      '#suffix' => '</div>',
+      '#weight' => 3,
+    );
+  }
+
+  // Render the messages.
+  $content['messages']['#weight'] = 0;
+  $i = 1;
+  $count = count($thread['messages']);
+  // To whom we will send messages.
+
+
+
+  foreach ($thread['messages'] as $mid => $message) {
+
+    if ($message->author) {
+      $message->author = user_load($message->author);
+    }
+
+    // Recipient
+    // Set message as read and theme it.
+    // Add CSS classes.
+    $message->classes = array('usg-message', 'usg-message-' . $i, $i % 2 == 1 ? 'usg-message-even' : 'usg-message-odd');
+    if (!empty($message->is_new)) {
+      // Mark message as read.
+      // $this->changeMsg()
+      //privatemsg_message_change_status($mid, UMSG_READ, $thread['user']); !!!!!!!!
+      $message->classes[] = 'usg-message-new';
+    }
+
+    if ($i == 1) {
+      $message->classes[] = 'usg-message-first';
+    }
+    if ($i == $count) {
+      $message->classes[] = 'usg-message-last';
+    }
+    $i++;
+    $content['messages'][$mid] = array(
+      '#markup' => theme('umsg_view', array('message' => $message)),
+    );
+  }
+
+
+  $participants_id = array();
+  foreach ($thread['participants'] as $participant) {
+    // Do we need to worry about recipient_name ?
+    $participants_id[$participant->recipient] = $participant->recipient;
+  }
+
+  $thread['participants'] = user_load_multiple(array_unique($participants_id));
+
+  // Display the reply form if user is allowed to use it.
+  if (umsg_user_access('write umsg')) {
+    $content['reply'] = drupal_get_form('umsg_new', $thread['participants'], $thread['subject-original'], $thread['thread_id'], FALSE);
+    $content['reply']['#weight'] = 5;
+  }
+
+  return $content;
+}
+
 function umsg_new($form, &$form_state, $recipients = array(), $subject = '', $thread_id = NULL, $read_all = FALSE) {
   global $user;
 
@@ -260,7 +473,7 @@ function umsg_new($form, &$form_state, $recipients = array(), $subject = '', $th
   elseif (empty($recipients) && is_string($recipients)) {
     $recipients = array();
   }
-
+  
   $usercount = 0;
   $to = array();
   $to_plain = array();
@@ -275,21 +488,15 @@ function umsg_new($form, &$form_state, $recipients = array(), $subject = '', $th
     }
 
     // Check if another module is blocking the sending of messages to the recipient by current user.
-    //$user_blocked = module_invoke_all('privatemsg_block_message', $user, array($recipient->uid => $recipient), array('thread_id' => $thread_id));
-    if (!count($user_blocked) <> 0 && $recipient->recipient) {
-      if ($recipient->type == 'user' && $recipient->recipient == $user->uid) {
+    // $user_blocked = module_invoke_all('privatemsg_block_message', $user, array($recipient->uid => $recipient), array('thread_id' => $thread_id));
+    if ($recipient->recipient) {
+      if ($recipient->recipient == $user->uid) {
         $usercount++;
         // Skip putting author in the recipients list for now.
         continue;
       }
       $to[$recipient->uid] = umsg_recipient_format($recipient);
       $to_plain[$recipient->uid] = umsg_recipient_format($recipient, array('plain' => TRUE, 'unique' => $unique));
-    }
-    else {
-      // Store blocked messages. These are only displayed if all recipients
-      // are blocked.
-      $first_reason = reset($user_blocked);
-      $blocked_messages[] = $first_reason['message'];
     }
   }
 
@@ -388,207 +595,7 @@ function umsg_new($form, &$form_state, $recipients = array(), $subject = '', $th
   // Explicitly adding validate/submit here.
   $form['#submit'] = array('umsg_new_submit');
   $form['#validate'] = array('umsg_new_validate');
-  field_attach_form('umsg_message', $message, $form, $form_state);
+  //field_attach_form('umsg_message', $message, $form, $form_state);
 
   return $form;
-}
-
-function umsg_new_validate($form, &$form_state) {
-
-  // The actual message that is being sent, we create this during validation and
-  // pass to submit to send out.
-  $message = (object) $form_state['values'];
-  $message->mid = 0;
-  $message->body = isset($message->body) ? $message->body : '';
-  $message->timestamp = REQUEST_TIME;
-
-  // Only parse the user string for a new thread.
-  if (!isset($message->thread_id)) {
-    $recipient_obj = user_load_by_name($message->recipient);
-
-    // Check for valid user.
-    if (isset($recipient_obj->uid)) {
-      $message->recipients = array($recipient_obj->uid => $recipient_obj);
-    }
-    else {
-      $message->recipients = array();
-    }
-  }
-  else {
-    // Load participants. Limit recipients to visible unless read_all is TRUE. !!!
-    $message->recipients = _privatemsg_load_thread_participants($message->thread_id, $message->read_all ? FALSE : $message->author);
-  }
-
-  $validated = _umsg_validate_message($message, TRUE);
-  foreach ($validated['messages'] as $type => $texts) {
-    foreach ($texts as $text) {
-      drupal_set_message($text, $type);
-    }
-  }
-  $form_state['validate_built_message'] = $message;
-}
-
-/**
- * Submit callback for the privatemsg_new form.
- */
-function umsg_new_submit($form, &$form_state) {
-
-  $message = $form_state['validate_built_message'];
-
-  //field_attach_submit('privatemsg_message', $message, $form, $form_state);
-  // Format each recipient.
-  // As we use une-to-one user message, get first ant unique name.
-  $recipient_first = reset($message->recipients);
-  $recipient = $recipient_first->name;
-
-  try {
-    $umsg = new umsgController();
-    $message = $umsg->send($message);
-//    $message = _umsg_send($message);
-    //_privatemsg_handle_recipients($message->mid, $message->recipients); // probably we don't need it !!!
-    drupal_set_message(t('A message has been sent to !recipient.', array('!recipient' => $recipient)));
-    // Only redirect on new threads. !!!
-    if ($message->mid == $message->thread_id || variable_get('privatemsg_default_redirect_reply', FALSE)) {
-      $redirect = variable_get('privatemsg_default_redirect', '<new-message>');
-      if ($redirect == '<new-message>' || (!empty($_REQUEST['destination']) && $_REQUEST['destination'] == '[new-message]')) {
-        if (!empty($_REQUEST['destination']) && $_REQUEST['destination'] == '[new-message]') {
-          // Remove GET param so that drupal_goto() uses the redirect from
-          // $form_state.
-          unset($_GET['destination']);
-        }
-        // Forward to the new message in the thread.
-        $form_state['redirect'] = array('messages/view/' . $message->thread_id, array('fragment' => 'usg-mid-' . $message->mid));
-      }
-      elseif (!empty($redirect)) {
-        $form_state['redirect'] = $redirect;
-      }
-    }
-  } catch (Exception $e) {
-    if (error_displayable()) {
-      require_once DRUPAL_ROOT . '/includes/errors.inc';
-      $variables = _drupal_decode_exception($e);
-      drupal_set_message(t('Failed to send a message to !recipients. %type: !message in %function (line %line of %file).', array('!recipients' => $recipient) + $variables), 'error');
-    }
-    else {
-      drupal_set_message(t('Failed to send a message to !recipients. Contact your site administrator.', $recipient), 'error');
-    }
-  }
-}
-
-/**
- * Return autocomplete results for usernames.
- */
-function umsg_autocomplete($string) {
-  // Parse $string and build list of valid user names.
-  $matches = array();
-  $return = umsg_user_autocomplete($string);
-
-  if (is_array($return) && !empty($return)) {
-    $matches = $return;
-  }
-
-  // Format the suggestions.
-  $themed_matches = array();
-  foreach ($matches as $key => $match) {
-    $themed_matches[$key] = umsg_recipient_format($match, array('plain' => TRUE));
-  }
-
-  $suggestions = array();
-  foreach ($themed_matches as $match) {
-    $suggestions[$match] = $match;
-  }
-
-  // convert to object to prevent drupal bug, see http://drupal.org/node/175361
-  drupal_json_output((object) $suggestions);
-}
-
-/**
- * Menu callback for viewing a thread.
- *
- * @param $thread
- *   The thread id
- * @return
- *   The page content.
- */
-function umsg_view($thread) {
-
-  $umsg = new umsgController();
-  $thread = $umsg->threadLoad($thread);
-  db_set_active();
-  if ($thread) {
-    dsm($thread, 'thread loaded successfully');
-  }
-
-  drupal_set_title($thread['subject']);
-
-//  return 'test';
-  
-  $content = array(
-    '#thread' => $thread,
-  );
-
-  if ($thread['to'] != $thread['message_count'] || !empty($thread['start'])) {
-    // Generate paging links.
-    $older = '';
-    if (isset($thread['older_start'])) {
-      $options = array(
-        'query' => array('start' => $thread['older_start']),
-        'title' => t('Display older messages'),
-      );
-      $older = l(t('<<'), 'messages/view/' . $thread['thread_id'], $options);
-    }
-    $newer = '';
-    if (isset($thread['newer_start'])) {
-      $options = array(
-        'query' => array('start' => $thread['newer_start']),
-        'title' => t('Display newer messages'),
-      );
-      $newer = l(t('>>'), 'messages/view/' . $thread['thread_id'], $options);
-    }
-    $substitutions = array('@from' => $thread['from'], '@to' => $thread['to'], '@total' => $thread['message_count'], '!previous_link' => $older, '!newer_link' => $newer);
-    $title = t('!previous_link Displaying messages @from - @to of @total !newer_link', $substitutions);
-    $content['pager'] = array(
-      '#markup' => trim($title),
-      '#prefix' => '<div class="privatemsg-view-pager">',
-      '#suffix' => '</div>',
-      '#weight' => 3,
-    );
-  }
-
-  // Render the messages.
-  $content['messages']['#weight'] = 0;
-  $i = 1;
-  $count = count($thread['messages']);
-  foreach ($thread['messages'] as $mid => $message) {
-    // Set message as read and theme it.
-    // Add CSS classes.
-    $message->classes = array('usg-message', 'usg-message-' . $i, $i % 2 == 1 ? 'usg-message-even' : 'usg-message-odd');
-    if (!empty($message->is_new)) {
-      // Mark message as read.
-      //privatemsg_message_change_status($pmid, UMSG_READ, $thread['user']); !!!!!!!!
-      $message->classes[] = 'usg-message-new'; 
-    }
-
-    if ($i == 1) {
-      $message->classes[] = 'usg-message-first';
-    }
-    if ($i == $count) {
-      $message->classes[] = 'usg-message-last';
-    }
-    $i++;
-//    dsm($content['messages']);
-    $content['messages'][$mid] = array(
-      //'#markup' => _umsg_render_message_view(array('message' => $message)),
-      
-      '#markup' => theme('umsg_view', array('message' => $message)),
-    );
-  }
-
-  // Display the reply form if user is allowed to use it.
-  if (umsg_user_access('write umsg')) {
-    $content['reply'] = drupal_get_form('umsg_new', $thread['participants'], $thread['subject-original'], $thread['thread_id'], $thread['read_all']);
-    $content['reply']['#weight'] = 5;
-  }
-
-  return $content;
 }
