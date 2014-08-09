@@ -113,7 +113,193 @@ class UmsgController { // implements UmsgControllerInterface {
   }
 
   /**
-   * !!! Something wrong when delete (loads more than have to)
+   * Load a thread with all the messages and participants.
+   *
+   * This function is called by the menu system through the %privatemsg_thread
+   * wildcard.
+   *
+   * @param $thread_id
+   *   Thread id, pmi.thread_id or pm.mid of the first message in that thread.
+   * @param $account
+   *   User object for which the thread should be loaded, defaults to
+   *   the current user.
+   * @param $start
+   *   Message offset from the start of the thread.
+   * @param $useAccessDenied
+   *   Set to TRUE if the function should forward to the access denied page
+   *   instead of not found. This is used by the menu system because that does
+   *   load arguments before access checks are made. Defaults to FALSE.
+   *
+   * @return
+   *   $thread object, with keys messages, participants, title and user. messages
+   *   contains an array of messages, participants an array of user, subject the
+   *   subject of the thread and user the user viewing the thread.
+   *
+   *   If no messages are found, or the thread_id is invalid, the function returns
+   *   FALSE.
+
+   * @ingroup api
+   */
+  public function threadLoad($thread_id, $account = NULL, $start = NULL, $useAccessDenied = FALSE) {
+    //$threads = &drupal_static(__FUNCTION__, array());
+    $thread_id = (int) $thread_id;
+    if ($thread_id > 0) {
+      $thread = array('thread_id' => $thread_id);
+
+      if (is_null($account)) {
+        $account = $this->current_user;
+      }
+
+      if (!isset($threads[$account->uid])) {
+        $threads[$account->uid] = array();
+      }
+
+      if (!array_key_exists($thread_id, $threads[$account->uid])) {
+        // Load the list of participants.
+        //!!! $thread['participants'] = _privatemsg_load_thread_participants($thread_id, $account, FALSE, 'view');
+        $thread['read_all'] = FALSE;
+        if (empty($thread['participants']) && umsg_user_access('read all user messages', $account)) {
+          $thread['read_all'] = TRUE;
+          // Load all participants.
+          //$thread['participants'] = _privatemsg_load_thread_participants($thread_id, FALSE, FALSE, 'view');
+        }
+
+        // Load messages returned by the messages query with privatemsg_message_load_multiple().
+        // $query = _privatemsg_assemble_query('messages', array($thread_id), $thread['read_all'] ? NULL : $account);
+
+        $query = $this->loadMessages(array($thread_id), $account);
+
+        // Use subquery to bypass group by since it is not possible to alter
+        // existing GROUP BY statements.
+        $countQuery = db_select($query);
+        $countQuery->addExpression('COUNT(*)');
+        $thread['message_count'] = $thread['to'] = $countQuery->execute()->fetchField(); // WRONG !!!
+
+        $thread['from'] = 1;
+        // Check if we need to limit the messages.
+        $max_amount = variable_get('umsg_view_max_amount', 20);
+
+        // If there is no start value, select based on get params.
+        if (is_null($start)) {
+          if (isset($_GET['start']) && $_GET['start'] < $thread['message_count']) {
+            $start = $_GET['start'];
+          }
+          elseif (!variable_get('privatemsg_view_use_max_as_default', FALSE) && $max_amount == UMSG_UNLIMITED) {
+            $start = UMSG_UNLIMITED;
+          }
+          else {
+            $start = $thread['message_count'] - (variable_get('privatemsg_view_use_max_as_default', FALSE) ? variable_get('privatemsg_view_default_amount', 10) : $max_amount);
+          }
+        }
+
+        if ($start != UMSG_UNLIMITED) {
+          if ($max_amount == UMSG_UNLIMITED) {
+            $last_page = 0;
+            $max_amount = $thread['message_count'];
+          }
+          else {
+            // Calculate the number of messages on the "last" page to avoid
+            // message overlap.
+            // Note - the last page lists the earliest messages, not the latest.
+            $paging_count = variable_get('privatemsg_view_use_max_as_default', FALSE) ? $thread['message_count'] - variable_get('privatemsg_view_default_amount', 10) : $thread['message_count'];
+            $last_page = $paging_count % $max_amount;
+          }
+
+          // Sanity check - we cannot start from a negative number.
+          if ($start < 0) {
+            $start = 0;
+          }
+          $thread['start'] = $start;
+
+          //If there are newer messages on the page, show pager link allowing to go to the newer messages.
+          if (($start + $max_amount + 1) < $thread['message_count']) {
+            $thread['to'] = $start + $max_amount;
+            $thread['newer_start'] = $start + $max_amount;
+          }
+          if ($start - $max_amount >= 0) {
+            $thread['older_start'] = $start - $max_amount;
+          }
+          elseif ($start > 0) {
+            $thread['older_start'] = 0;
+          }
+
+          // Do not show messages on the last page that would show on the page
+          // before. This will only work when using the visual pager.
+          if ($start < $last_page && $max_amount != UMSG_UNLIMITED && $max_amount < $thread['message_count']) {
+            unset($thread['older_start']);
+            $thread['to'] = $thread['newer_start'] = $max_amount = $last_page;
+            // Start from the first message - this is a specific hack to make sure
+            // the message display has sane paging on the last page.
+            $start = 0;
+          }
+          // Visual counts start from 1 instead of zero, so plus one.
+          $thread['from'] = $start + 1;
+          $query->range($start, $max_amount);
+        }
+
+
+
+        $thread['messages'] = $this->message_load_multiple($query->execute()->fetchCol(), $account);
+
+        // If there are no messages, don't allow access to the thread.
+        if (empty($thread['messages'])) {
+          $thread = FALSE;
+        }
+        else {
+
+          // General data, assume subject is the same for all messages of that thread.
+          $thread['user'] = $account;
+          $message = current($thread['messages']);
+          $thread['subject'] = $thread['subject-original'] = $this->buildSubject($message->body);
+        }
+        $threads[$account->uid][$thread_id] = $thread;
+      }
+      return $threads[$account->uid][$thread_id];
+    }
+    return FALSE;
+  }
+
+  private function buildSubject($string) {
+    return t('Subject') . ': ' . substr($string, 0, UMSG_STRIP_BODY) . '...';
+  }
+
+  /**
+   * Load multiple messages.
+   *
+   * @param $mids
+   *   Array of Message ids, m.mid field
+   * @param $account
+   *   For which account the message should be loaded.
+   *   Defaults to the current user.
+   *
+   * @ingroup api
+   */
+  public function message_load_multiple($thread, $account = NULL) {
+
+    $query = db_select('message_index', 'mi');
+    $query->leftJoin('message', 'm', 'm.mid = mi.mid');
+    $query->fields('mi');
+    $query->fields('m');
+
+    // Exclude archived/deleted.
+    $query->condition('mi.archived', 0);
+    $query->condition('mi.deleted', 0);
+
+    $query
+      ->condition('mi.thread_id', $thread)
+      //->groupBy('m.timestamp')
+      //->groupBy('mi.mid')
+      // Order by timestamp first.
+      ->orderBy('m.timestamp', 'ASC')
+      ->orderBy('mi.mid', 'ASC');
+    if ($account) {
+      $query->condition('mi.recipient', $account->uid);
+    }
+
+    return $query->execute()->fetchAll();
+  }
+
+  /**
    * Load all thread messages.
    * 
    * @param type $threads
@@ -130,12 +316,12 @@ class UmsgController { // implements UmsgControllerInterface {
     }
 
     $query
-            ->condition('mi.thread_id', $threads)
-            ->groupBy('m.timestamp')
-            ->groupBy('mi.mid')
-            // Order by timestamp first.
-            ->orderBy('m.timestamp', 'ASC')
-            ->orderBy('mi.mid', 'ASC');
+      ->condition('mi.thread_id', $threads)
+      ->groupBy('m.timestamp')
+      ->groupBy('mi.mid')
+      // Order by timestamp first.
+      ->orderBy('m.timestamp', 'ASC')
+      ->orderBy('mi.mid', 'ASC');
     if ($account) {
       $query->condition('mi.recipient', $account->uid);
     }
@@ -185,8 +371,8 @@ class UmsgController { // implements UmsgControllerInterface {
     }
 
     $update = db_update('message_index')
-            ->fields(array($affected_field => $delete_value))
-            ->condition('mid', $mid);
+      ->fields(array($affected_field => $delete_value))
+      ->condition('mid', $mid);
     if ($account) {
       $update->condition('recipient', $account->uid);
     }
@@ -237,8 +423,8 @@ class UmsgController { // implements UmsgControllerInterface {
       $args['body'] = $message->body;
       $args['timestamp'] = $message->timestamp;
       $mid = db_insert('message')
-              ->fields($args)
-              ->execute();
+        ->fields($args)
+        ->execute();
       $message->mid = $mid;
 
       // Thread ID is the same as the mid if it's the first message in the thread.
@@ -278,8 +464,7 @@ class UmsgController { // implements UmsgControllerInterface {
 
 //    module_invoke_all('privatemsg_message_insert', $message);
 //    field_attach_insert('privatemsg_message', $message);
-    }
-    catch (Exception $exception) {
+    } catch (Exception $exception) {
       $transaction->rollback();
       watchdog_exception('umsg', $exception);
       throw $exception;

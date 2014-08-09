@@ -182,7 +182,8 @@ function umsg_list($form, &$form_state, $argument, $account) {
   //dsm($form, 'list form');
   // Define checkboxes, pager and theme
   // FOR SOME REASON IT TRY TO QUERY IN MSG DATABASE
-  // $form['updated']['pager'] = array('#markup' => theme('pager'), '#weight' => 20);
+  // db_set_active();
+   $form['updated']['pager'] = array('#markup' => theme('pager'), '#weight' => 2);
 
   return $form;
 }
@@ -296,7 +297,7 @@ function umsg_new($form, &$form_state, $recipients = array(), $subject = '', $th
     // Assume the user sent message to own account as if the usercount is one or less, then the user sent a message but not to self.
     $to['user_' . $user->uid] = umsg_recipient_format($user);
     $to_plain['user_' . $user->uid] = umsg_recipient_format($user, array('plain' => TRUE));
-  }  
+  }
 
   if (!empty($to)) {
     $recipients_plain = implode(', ', $to_plain);
@@ -388,12 +389,12 @@ function umsg_new($form, &$form_state, $recipients = array(), $subject = '', $th
   $form['#submit'] = array('umsg_new_submit');
   $form['#validate'] = array('umsg_new_validate');
   field_attach_form('umsg_message', $message, $form, $form_state);
-  
+
   return $form;
 }
 
 function umsg_new_validate($form, &$form_state) {
-  
+
   // The actual message that is being sent, we create this during validation and
   // pass to submit to send out.
   $message = (object) $form_state['values'];
@@ -432,8 +433,8 @@ function umsg_new_validate($form, &$form_state) {
  */
 function umsg_new_submit($form, &$form_state) {
 
-  $message = $form_state['validate_built_message']; 
-  
+  $message = $form_state['validate_built_message'];
+
   //field_attach_submit('privatemsg_message', $message, $form, $form_state);
   // Format each recipient.
   // As we use une-to-one user message, get first ant unique name.
@@ -456,14 +457,13 @@ function umsg_new_submit($form, &$form_state) {
           unset($_GET['destination']);
         }
         // Forward to the new message in the thread.
-        $form_state['redirect'] = array('messages/view/' . $message->thread_id, array('fragment' => 'privatemsg-mid-' . $message->mid));
+        $form_state['redirect'] = array('messages/view/' . $message->thread_id, array('fragment' => 'usg-mid-' . $message->mid));
       }
       elseif (!empty($redirect)) {
         $form_state['redirect'] = $redirect;
       }
     }
-  }
-  catch (Exception $e) {
+  } catch (Exception $e) {
     if (error_displayable()) {
       require_once DRUPAL_ROOT . '/includes/errors.inc';
       $variables = _drupal_decode_exception($e);
@@ -510,13 +510,19 @@ function umsg_autocomplete($string) {
  * @return
  *   The page content.
  */
-function  umsg_view($thread) {
-  
-  dsm($thread);
-  
-  
+function umsg_view($thread) {
+
+  $umsg = new umsgController();
+  $thread = $umsg->threadLoad($thread);
+  db_set_active();
+  if ($thread) {
+    dsm($thread, 'thread loaded successfully');
+  }
+
   drupal_set_title($thread['subject']);
 
+//  return 'test';
+  
   $content = array(
     '#thread' => $thread,
   );
@@ -542,55 +548,46 @@ function  umsg_view($thread) {
     $substitutions = array('@from' => $thread['from'], '@to' => $thread['to'], '@total' => $thread['message_count'], '!previous_link' => $older, '!newer_link' => $newer);
     $title = t('!previous_link Displaying messages @from - @to of @total !newer_link', $substitutions);
     $content['pager'] = array(
-      '#markup'  => trim($title),
+      '#markup' => trim($title),
       '#prefix' => '<div class="privatemsg-view-pager">',
       '#suffix' => '</div>',
       '#weight' => 3,
     );
   }
 
-  // Render the participants.
-  $content['participants'] = array(
-    '#markup' => theme('privatemsg_recipients', array('thread' => $thread)),
-    '#weight' => -5
-  );
-
   // Render the messages.
   $content['messages']['#weight'] = 0;
   $i = 1;
   $count = count($thread['messages']);
-  foreach ($thread['messages'] as $pmid => $message) {
+  foreach ($thread['messages'] as $mid => $message) {
     // Set message as read and theme it.
     // Add CSS classes.
-    $message->classes = array('privatemsg-message', 'privatemsg-message-' . $i, $i % 2 == 1 ? 'privatemsg-message-even' : 'privatemsg-message-odd');
+    $message->classes = array('usg-message', 'usg-message-' . $i, $i % 2 == 1 ? 'usg-message-even' : 'usg-message-odd');
     if (!empty($message->is_new)) {
       // Mark message as read.
-      privatemsg_message_change_status($pmid, PRIVATEMSG_READ, $thread['user']);
-      $message->classes[] = 'privatemsg-message-new';
+      //privatemsg_message_change_status($pmid, UMSG_READ, $thread['user']); !!!!!!!!
+      $message->classes[] = 'usg-message-new'; 
     }
 
     if ($i == 1) {
-      $message->classes[] = 'privatemsg-message-first';
+      $message->classes[] = 'usg-message-first';
     }
     if ($i == $count) {
-      $message->classes[] = 'privatemsg-message-last';
+      $message->classes[] = 'usg-message-last';
     }
     $i++;
-    $content['messages'][$pmid] = array(
-      '#markup' => theme('privatemsg_view', array('message' => $message)),
+//    dsm($content['messages']);
+    $content['messages'][$mid] = array(
+      //'#markup' => _umsg_render_message_view(array('message' => $message)),
+      
+      '#markup' => theme('umsg_view', array('message' => $message)),
     );
   }
 
   // Display the reply form if user is allowed to use it.
   if (umsg_user_access('write umsg')) {
-    $content['reply'] = drupal_get_form('privatemsg_new', $thread['participants'], $thread['subject-original'], $thread['thread_id'], $thread['read_all']);
+    $content['reply'] = drupal_get_form('umsg_new', $thread['participants'], $thread['subject-original'], $thread['thread_id'], $thread['read_all']);
     $content['reply']['#weight'] = 5;
-  }
-  // Check after calling the privatemsg_new form so that this message is only
-  // displayed when we are not sending a message.
-  if ($thread['read_all']) {
-    // User has permission to read all messages AND is not a participant of the current thread.
-    drupal_set_message(t('This conversation is being viewed with escalated privileges and may not be the same as shown to normal users.'), 'warning');
   }
 
   return $content;

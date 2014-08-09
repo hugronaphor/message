@@ -18,6 +18,16 @@ define('UMSG_UNREAD', 1);
  */
 define('UMSG_FAKE_CALLBACK', 'umsg_fake_function');
 
+/**
+ * Show unlimited messages in a thread.
+ */
+define('UMSG_UNLIMITED', 'unlimited');
+
+/**
+ * Subject strip body.
+ */
+define('UMSG_STRIP_BODY', 50);
+
 // Include Query file.
 require_once 'api/umsgController.php';
 
@@ -91,11 +101,11 @@ function umsg_menu() {
   );
   $items['messages/view'] = array(
     //'load arguments'   => array(NULL, NULL),
-    'title'            => 'Title of thread?',
-    'page callback'    => 'umsg_view',
+    'title' => 'Title of thread?',
+    'page callback' => 'umsg_view',
 //    'page arguments'   => array(2),
-    'file'             => 'umsg.pages.inc',
-    'access callback'  => 'umsg_user_access',
+    'file' => 'umsg.pages.inc',
+    'access callback' => 'umsg_user_access',
     'access arguments' => array('read umsg'),
     'type' => MENU_NORMAL_ITEM,
   );
@@ -272,6 +282,11 @@ function umsg_theme() {
       'file' => 'umsg.theme.inc',
       'path' => drupal_get_path('module', 'umsg'),
       'variables' => array('recipient' => NULL, 'options' => array()),
+    ),
+    'umsg_view' => array(
+      'variables' => array('message' => NULL),
+      //'template'         => variable_get('private_message_view_template', 'privatemsg-view'), // 'privatemsg',
+      'template' => 'umsg-view', // 'privatemsg',
     ),
   );
   // Include the theme file to load the theme suggestions.
@@ -559,15 +574,15 @@ function umsg_user_autocomplete($fragment) {
   global $user;
   // First, load all possible uids.
   $uids = db_select('users', 'u')
-          ->fields('u', array('uid'))
-          ->condition('u.name', $fragment . '%', 'LIKE')
-          ->condition('u.status', 0, '<>')
-          // exclude sef-user.
-          ->condition('u.uid', $user->uid, '<>')
-          ->orderBy('u.name', 'ASC')
-          ->range(0, 10)
-          ->execute()
-          ->fetchCol();
+    ->fields('u', array('uid'))
+    ->condition('u.name', $fragment . '%', 'LIKE')
+    ->condition('u.status', 0, '<>')
+    // exclude sef-user.
+    ->condition('u.uid', $user->uid, '<>')
+    ->orderBy('u.name', 'ASC')
+    ->range(0, 10)
+    ->execute()
+    ->fetchCol();
   // Load the corresponding users, make sure to not load any duplicates.
   $accounts = user_load_multiple(array_unique($uids));
 
@@ -650,4 +665,76 @@ function _umsg_validate_message(&$message, $form = FALSE) {
     'success' => $success,
     'messages' => $messages,
   );
+}
+
+/**
+ * Implements hook_umsg_view_template().
+ *
+ * Allows modules to define different message view template.
+ *
+ * This hook returns information about available themes for privatemsg viewing.
+ *
+ * array(
+ *  'machine_template_name' => 'Human readable template name',
+ *  'machine_template_name_2' => 'Human readable template name 2'
+ * };
+ */
+function umsg_umsg_view_template() {
+  return array(
+    'umsg-view' => 'Default view',
+  );
+}
+
+//function template_preprocess_umsg_view(&$vars) {
+  function template_preprocess_umsg_view($vars) {
+    
+  dsm('offdoamne');
+  
+
+  global $user;
+
+  $message = $vars['message'];
+  $vars['mid'] = isset($message->mid) ? $message->mid : NULL;
+  $vars['message_classes'] = isset($message->classes) ? $message->classes : array();
+  $vars['thread_id'] = isset($message->thread_id) ? $message->thread_id : NULL;
+  $vars['author_picture'] = theme('user_picture', array('account' => $message->author));
+  // Directly address the current user if he is the author.
+  if ($user->uid == $message->author->uid) {
+    $vars['author_name_link'] = t('You');
+  }
+  else {
+    $vars['author_name_link'] = umsg_recipient_format($message->author);
+  }
+  $vars['message_timestamp'] = umsg_format_date($message->timestamp);
+
+  $message->content = array(
+    '#view_mode' => 'message',
+    'body' => array(
+      '#markup' => check_markup($message->body, $message->format),
+      '#weight' => -4,
+    ),
+  );
+
+  // Build fields content.
+//  field_attach_prepare_view('privatemsg_message', array($vars['mid'] => $message), 'message');
+//  $message->content += field_attach_view('privatemsg_message', $message, 'message');
+
+  // Render message body.
+  $vars['message_body'] =  drupal_render($message->content);
+  if (isset($vars['mid']) && isset($vars['thread_id']) && umsg_user_access('delete umsg')) {
+    $vars['message_actions'][] = array('title' => t('Delete'), 'href' => 'messages/delete/' . $vars['thread_id'] . '/' . $vars['mid']);
+  }
+  $vars['message_anchors'][] = 'privatemsg-mid-' . $vars['mid'];
+  if (!empty($message->is_new)) {
+    $vars['message_anchors'][] = 'new';
+    $vars['new'] = drupal_ucfirst(t('new'));
+  }
+
+  $vars['message_actions'] = !empty($vars['message_actions']) ? theme('links', array('links' => $vars['message_actions'], 'attributes' => array('class' => array('privatemsg-message-actions', 'links', 'inline')))) : '';
+
+  $vars['anchors'] = '';
+  foreach ($vars['message_anchors'] as $anchor) {
+    $vars['anchors'] .= '<a name="' . $anchor . '"></a>';
+  }
+  
 }
