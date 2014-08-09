@@ -512,7 +512,7 @@ function umsg_autocomplete($string) {
  */
 function  umsg_view($thread) {
   
-  dsm('the test');
+  dsm($thread);
   
   
   drupal_set_title($thread['subject']);
@@ -582,7 +582,7 @@ function  umsg_view($thread) {
   }
 
   // Display the reply form if user is allowed to use it.
-  if (privatemsg_user_access('write privatemsg') || privatemsg_user_access('reply only privatemsg')) {
+  if (umsg_user_access('write umsg')) {
     $content['reply'] = drupal_get_form('privatemsg_new', $thread['participants'], $thread['subject-original'], $thread['thread_id'], $thread['read_all']);
     $content['reply']['#weight'] = 5;
   }
@@ -592,8 +592,6 @@ function  umsg_view($thread) {
     // User has permission to read all messages AND is not a participant of the current thread.
     drupal_set_message(t('This conversation is being viewed with escalated privileges and may not be the same as shown to normal users.'), 'warning');
   }
-
-  drupal_alter('privatemsg_view', $content);
 
   return $content;
 }

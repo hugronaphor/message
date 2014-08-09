@@ -62,7 +62,6 @@ function umsg_menu() {
     'file' => 'umsg.pages.inc',
     'access callback' => 'umsg_user_access',
     'type' => MENU_NORMAL_ITEM,
-    'menu_name' => 'user-menu',
   );
   $items['messages/list'] = array(
     'title' => 'Messages',
@@ -90,14 +89,15 @@ function umsg_menu() {
     'access callback' => 'umsg_user_access',
     'type' => MENU_NORMAL_ITEM,
   );
-  $items['messages/view/%umsg_thread'] = array(
+  $items['messages/view'] = array(
     //'load arguments'   => array(NULL, NULL),
     'title'            => 'Title of thread?',
     'page callback'    => 'umsg_view',
-    'page arguments'   => array(2),
+//    'page arguments'   => array(2),
     'file'             => 'umsg.pages.inc',
-//    'access callback'  => 'umsg_user_access',
-//    'access arguments' => array('read umsg'),
+    'access callback'  => 'umsg_user_access',
+    'access arguments' => array('read umsg'),
+    'type' => MENU_NORMAL_ITEM,
   );
 //  $items['messages/delete/%umsg_thread/%umsg_message'] = array(
 //    'title'            => 'Delete message',
