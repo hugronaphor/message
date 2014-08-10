@@ -11,9 +11,8 @@ PERMISSIONS
 ____________________
 
 Administer umsg
-Read all user messages
 Read own user messages
-Write new user messages
+Write own user messages
 Delete own user messages
 
 

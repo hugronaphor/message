@@ -26,6 +26,24 @@ table.umsg-list thead {
   color: #fff;
 }
 
+#umsg-view-top-subject {
+  float: left;
+}
+
+#umsg-view-top-pager {
+  float: right;
+}
+
+#umsg-view-top-pager ul {
+  padding: 0;
+  list-style-type: none;
+  list-style-image: none;
+}
+#umsg-view-top-pager ul li {
+  display: inline-block;
+}
+
+
 #umsg-list-main-navigation .item-list ul li {
   background: #495160;
   -webkit-border-radius: 3px;
@@ -62,7 +80,8 @@ table.umsg-list thead {
   background: green;
 }
 
-table.umsg-list {
+table.umsg-list,
+#umsg-page-content {
   width: 72%;
   float: right;
 }
@@ -74,3 +93,32 @@ table.umsg-list .umsg-item-new {
 .umsg-list-subject {
   min-width: 35%;
 }
+
+.umsg-message {
+  border:1px solid gray;
+  -moz-user-select: none;
+  -khtml-user-select: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.umsg-message .umsg-author-info,
+.umsg-message .umsg-message-date,
+.umsg-message .umsg-message-body-short {
+  width:32%;
+  display: inline-block;
+}
+
+.umsg-author-avatar {
+  width: 40px;
+}
+.umsg-author-info > div {
+  display: inline-block;
+}
+.umsg-author-avatar img {
+  width: 100%;
+}
+.hide {
+  display:none;
+}
+
