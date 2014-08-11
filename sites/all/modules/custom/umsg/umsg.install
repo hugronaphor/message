@@ -85,9 +85,7 @@ function _umsg_populate_messages() {
       'thread_id' => $message->thread_id,
       'recipient' => $admin_user->uid,
       'recipient_name' => $admin_user->name,
-      //'type' => 'user', // will be deleted !!!
       'is_new' => 1,
-      'deleted' => 0,
     );
 
     $msg_index_args_2 = array(
@@ -95,9 +93,7 @@ function _umsg_populate_messages() {
       'thread_id' => $message->thread_id,
       'recipient' => $recipient_user->uid,
       'recipient_name' => $recipient_user->name,
-      //'type' => 'user', // will be deleted !!!
       'is_new' => 1,
-      'deleted' => 0,
     );
 
     $msg_index_args_3 = array(
@@ -105,9 +101,7 @@ function _umsg_populate_messages() {
       'thread_id' => $message->thread_id,
       'recipient' => $recipient_user->uid,
       'recipient_name' => $recipient_user->name,
-      //'type' => 'user', // will be deleted !!!
       'is_new' => 1,
-      'deleted' => 0,
     );
 
     // Add registration to sender.
@@ -211,14 +205,7 @@ function umsg_schema_msgdb() {
         'unsigned' => TRUE,
       ),
       'archived' => array(
-        'description' => 'Whether the user has archived/deleted this message',
-        'type' => 'int',
-        'unsigned' => TRUE,
-        'not null' => TRUE,
-        'default' => 0
-      ),
-      'deleted' => array(
-        'description' => 'Whether the user has defenetly deleted this message',
+        'description' => 'Whether the user has archived this message',
         'type' => 'int',
         'unsigned' => TRUE,
         'not null' => TRUE,
@@ -227,9 +214,9 @@ function umsg_schema_msgdb() {
     ),
     'primary key' => array('mid', 'recipient', 'recipient_name'),
     'indexes' => array(
-      'list' => array('recipient', 'recipient_name', 'deleted', 'archived', 'is_new'),
+      'list' => array('recipient', 'recipient_name', 'archived', 'is_new'),
       'messages' => array('mid', 'recipient', 'recipient_name'),
-      'participants' => array('thread_id', 'recipient', 'recipient_name', 'deleted', 'archived'),
+      'participants' => array('thread_id', 'recipient', 'recipient_name', 'archived'),
     ),
   );
 

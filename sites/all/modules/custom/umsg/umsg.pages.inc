@@ -50,22 +50,7 @@ function umsg_list_js($form, $form_state) {
   return $form['updated'];
 }
 
-/**
- * Delete specific message of thread
- * 
- * @param type $form
- * @param type $form_state
- * @param type $thread
- * @param type $message
- * @return type
- */
-function umsg_delete($form, $form_state, $thread, $message) {
-  
-}
 
-function umsg_delete_submit($form, &$form_state) {
-  
-}
 
 /**
  * List messages.
@@ -341,6 +326,7 @@ function umsg_autocomplete($string) {
 function umsg_view($thread) {
   $umsg = new umsgController();
   $thread = $umsg->threadLoad(check_plain($thread));
+//  dsm($thread);
   // Get prev/next thread id's
   $umsg->setDefaultDbActive();
 
@@ -384,7 +370,7 @@ function umsg_view($thread) {
     if (!empty($message->is_new)) {
       // Mark message as read.
       $umsg = new umsgController();
-      $umsg->changeMsgStatus($message->mid, UMSG_READ, $thread['user']);
+      $umsg->changeMsgReadStatus($message->mid, UMSG_READ, $thread['user']);
       $message->classes[] = 'umsg-message-new';
     }
 

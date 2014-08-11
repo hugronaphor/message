@@ -112,14 +112,14 @@ function umsg_menu() {
     'access arguments' => array('delete umsg'),
     'type' => MENU_CALLBACK,
   );
-//  $items['messages/delete/%umsg_thread/%umsg_message'] = array(
-//    'title'            => 'Delete message',
-//    'page callback'    => 'drupal_get_form',
-//    'page arguments'   => array('umsg_delete', 2, 3),
-//    'file'             => 'umsg.pages.inc',
-//    'access callback'  => 'umsg_user_access',
-//    'access arguments' => array('delete umsg'),u
-//  );
+  $items['messages/delete/%umsg_thread/%umsg_message'] = array(
+    'title' => 'Delete message',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('message_delete_confirm', 2, 3),
+    //'file' => 'umsg.pages.inc',
+    'access callback' => 'umsg_user_access',
+    'access arguments' => array('delete umsg'),
+  );
   $items['messages/new'] = array(
     'title' => t('Compose a message'),
     'page callback' => 'drupal_get_form',
@@ -485,7 +485,7 @@ function umsg_operation_execute($operation, $threads, $account = NULL) {
  * @param $threads
  *   Array with thread id's or a single thread id.
  * @param $delete
- *   Indicates if the threads should be deleted or restored. 1 => delete, 0 => restore.
+ *   Indicates if the threads should be deleted or archived. 1 => archive, 0 => delete.
  * @param $account
  *   User account for which the delete action should be carried out - Set to NULL to delete for all users.
  */
@@ -673,17 +673,16 @@ function template_preprocess_umsg_view(&$vars) {
   $vars['author_name_link'] = umsg_recipient_format($message->author);
   $vars['message_timestamp'] = umsg_format_date($message->timestamp);
 
-  $message->content = array(
-    '#view_mode' => 'message',
-    'body' => array(
-      '#markup' => $message->body,
-      '#weight' => -4,
-    ),
-  );
+//  $message->content = array(
+//    '#view_mode' => 'message',
+//    'body' => array(
+//      '#markup' => $message->body,
+//      '#weight' => -4,
+//    ),
+//  );
 
   // Render message body.
-  $vars['message_body'] = drupal_render($message->content);
-
+  $vars['message_body'] = check_plain($message->body);
   // Message in thread actions.
   if (isset($vars['mid']) && isset($vars['thread_id'])) {
 
@@ -698,7 +697,7 @@ function template_preprocess_umsg_view(&$vars) {
 
     if (umsg_user_access('delete umsg')) {
       $vars['message_actions'][] = array(
-        'title' => t('Delete(to do)'),
+        'title' => t('Delete'),
         'href' => 'messages/delete/' . $vars['thread_id'] . '/' . $vars['mid'],
         'attributes' => array('class' => array('delete-umsg-in-thread-link')),
         'html' => TRUE,
@@ -747,8 +746,29 @@ function _umsg_build_thread_pager($ids) {
 }
 
 function umsg_thread_load($thread_id) {
-  // Specific user permission to delete this thread is checked later.
-  return check_plain($thread_id);
+  global $user;
+  // To do drupal static.
+
+  $umsg = new umsgController();
+  $thread = $umsg->threadLoad(check_plain($thread_id));
+  if (!empty($thread)) {
+    $thread['user'] = $user;
+    return $thread;
+  }
+
+  return NULL;
+}
+
+function umsg_message_load($msg_id) {
+  global $user;
+  // To do drupal static.
+  $umsg = new umsgController();
+  $messages = $umsg->messageLoadMultiple(array(check_plain($msg_id)), $user);
+  if (!empty($messages)) {
+    return current($messages);
+  }
+
+  return NULL;
 }
 
 function thread_delete_confirm($form_state, $thread_id) {
@@ -768,4 +788,39 @@ function thread_delete_confirm_submit($form, &$form_state) {
     umsg_thread_delete(array($thread_id), 0);
   }
   drupal_goto("messages");
+}
+
+// ---------------
+
+function message_delete_confirm($form, $form_state, $thread, $message) {
+  
+  // If message is not available, this means that this user
+  // is not allowed to perform this action.
+  if(!$thread || !$message) {
+    drupal_goto("messages");
+  }
+  
+  $form['mid'] = array(
+    '#type' => 'value',
+    '#value' => $message->mid,
+  );
+  $form['delete_destination'] = array(
+    '#type' => 'value',
+    '#value' => count($thread['messages']) > 1 ? 'messages/view/' . $message->thread_id : 'messages',
+  );
+  $form_state['user'] = $thread['user'];
+
+  return confirm_form($form, t('Are you sure you want to delete this message?'), isset($_GET['destination']) ? $_GET['destination'] : 'messages/view/' . $message->thread_id, t('This action cannot be undone.'), t('Delete'), t('Cancel')
+  );
+}
+
+function message_delete_confirm_submit($form, &$form_state) {
+  if ($form_state['values']['confirm']) {
+
+    $umsg = new umsgController();
+    $umsg->changeMsg($form_state['values']['mid'], 0, $form_state['user']);
+    drupal_set_message(t('Message has been deleted.'));
+  }
+
+  $form_state['redirect'] = $form_state['values']['delete_destination'];
 }

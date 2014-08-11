@@ -58,6 +58,8 @@ class UmsgController { // implements UmsgControllerInterface {
 
     $trash_status = ($scope == 'list_trash') ? 1 : 0;
     $sent = ($scope == 'list_sent') ? 1 : 0;
+    
+    dsm('To fix listing in inbox/Sent of trash messages.');
 
     $query = db_select('message', 'm')->extend('PagerDefault');
     $query->join('message_index', 'mi', 'mi.mid = m.mid');
@@ -75,13 +77,12 @@ class UmsgController { // implements UmsgControllerInterface {
     // Trash messages
     $count_query->condition('mi.archived', $trash_status);
 
-    $count_query->condition('mi.deleted', 0);
     $query->setCountQuery($count_query);
 
     // Required columns
     $query->addField('mi', 'thread_id');
 
-    $query->addExpression('SUM(mi.archived)', 'archivedd');
+    $query->addExpression('SUM(mi.archived)', 'archived');
     // Strip message field in order to be used as short teaser for thread.
     $query->addExpression('SUBSTRING(m.body, 1, 50)', 'subject');
     $query->addExpression('MAX(m.timestamp)', 'last_updated');
@@ -103,7 +104,6 @@ class UmsgController { // implements UmsgControllerInterface {
     }
 
     $query->condition('mi.recipient', $account->uid);
-    $query->condition('mi.deleted', 0);
     // Trash messages.
     $query->condition('archived', $trash_status);
     $query->groupBy('mi.thread_id');
@@ -153,8 +153,8 @@ class UmsgController { // implements UmsgControllerInterface {
       $thread['participants'] = $this->getThreadParticipants($thread_id, $account, FALSE, 'view');
 
       $query = $this->loadMessages(array($thread_id), $account);
-      
-      $thread['messages'] = $this->message_load_multiple($query->execute()->fetchCol(), $account);
+
+      $thread['messages'] = $this->messageLoadMultiple($query->execute()->fetchCol(), $account);
 
       // If there are no messages, don't allow access to the thread.
       if (empty($thread['messages'])) {
@@ -188,31 +188,19 @@ class UmsgController { // implements UmsgControllerInterface {
     return $query->groupBy('mi.recipient')->execute()->fetchAll();
   }
 
-  /**
-   * Load multiple messages.
-   *
-   * @param $mids
-   *   Array of Message ids, m.mid field
-   * @param $account
-   *   For which account the message should be loaded.
-   *   Defaults to the current user.
-   */
-  public function message_load_multiple($thread, $account = NULL) {
-    
-    if(!$thread) {
+  public function messageLoadMultiple($mids, $account = NULL) {
+
+    if (empty($mids)) {
       return array();
     }
-    
+
     $query = db_select('message_index', 'mi');
     $query->leftJoin('message', 'm', 'm.mid = mi.mid');
     $query->fields('mi');
     $query->fields('m');
 
-    // Exclude deleted.
-    $query->condition('mi.deleted', 0);
-
     $query
-            ->condition('mi.thread_id', $thread)
+            ->condition('m.mid', $mids, 'IN')
             // Order by timestamp first.
             ->orderBy('m.timestamp', 'DESC')
             ->orderBy('mi.mid', 'ASC');
@@ -238,9 +226,8 @@ class UmsgController { // implements UmsgControllerInterface {
     $query->fields('mi');
     $query->fields('m');
 
-    // Exclude archived/deleted.
+    // Exclude archived.
     $query->condition('mi.archived', $thread['archived']);
-    $query->condition('mi.deleted', 0);
     $query->condition('mi.thread_id', $thread['thread_id'], '<>');
     $query->condition('mi.recipient', $this->current_user->uid);
     $query->addExpression('MAX(m.timestamp)', 'last_updated');
@@ -289,7 +276,6 @@ class UmsgController { // implements UmsgControllerInterface {
     $query = db_select('message_index', 'mi');
     $query->addExpression('COUNT(DISTINCT thread_id)', 'unread_count');
 
-    $query->condition('mi.deleted', 0);
     $query->condition('mi.archived', $trash_status);
     // We count all messages in trash and unreaded in inbox.
     if (!$trash_status) {
@@ -303,9 +289,6 @@ class UmsgController { // implements UmsgControllerInterface {
   /**
    * Delete or Archive a message.
    * 
-   * !At this time we just mark message as deleted,
-   * Decited to delete messages on fly.
-   * 
    * @todo 
    *   Delete messages on fly, if $delete == 0
    *
@@ -318,22 +301,45 @@ class UmsgController { // implements UmsgControllerInterface {
    *   Set to NULL to delete for all users.
    */
   public function changeMsg($mid, $delete, $account = NULL) {
-    $delete_value = 1;
 
+    // Archive message.
     if ($delete) {
-      $affected_field = 'archived';
+      $update = db_update('message_index')
+              ->fields(array('archived' => 1))
+              ->condition('mid', $mid);
+      if ($account) {
+        $update->condition('recipient', $account->uid);
+      }
+      $update->execute();
     }
+    // Delete message.
     else {
-      $affected_field = 'deleted';
+      $delete = db_delete('message_index')
+              ->condition('mid', $mid);
+      if ($account) {
+        $delete->condition('recipient', $account->uid);
+      }
+      $delete->execute();
+
+      // Check if this message is attached to other users.
+      $query = db_select('message_index', 'mi');
+      $query->addField('mi', 'mid');
+      $query->join('message', 'm', 'm.mid = mi.mid');
+      $query->condition('m.mid', $mid);
+
+      $exist = $query->execute()->fetchCol();
+
+      if (empty($exist)) {
+        // Delete message, if there are not references.
+        $delete = db_delete('message')
+                ->condition('mid', $mid)
+                ->execute();
+
+        return FALSE;
+      }
     }
 
-    $update = db_update('message_index')
-            ->fields(array($affected_field => $delete_value))
-            ->condition('mid', $mid);
-    if ($account) {
-      $update->condition('recipient', $account->uid);
-    }
-    $update->execute();
+    return TRUE;
   }
 
   /**
@@ -346,7 +352,7 @@ class UmsgController { // implements UmsgControllerInterface {
    * @param $account
    *   User object, defaults to the current user
    */
-  function changeMsgStatus($mid, $status, $account = NULL) {
+  function changeMsgReadStatus($mid, $status, $account = NULL) {
     $this->setUmsgDbActive();
 
     if (!$account) {
@@ -380,7 +386,7 @@ class UmsgController { // implements UmsgControllerInterface {
     $transaction = db_transaction();
     try {
 
-      $query = db_insert('message_index')->fields(array('mid', 'thread_id', 'recipient', 'is_new', 'archived', 'deleted'));
+      $query = db_insert('message_index')->fields(array('mid', 'thread_id', 'recipient', 'is_new', 'archived'));
 
       // 1) Save the message body first.
       $args = array();
@@ -407,7 +413,6 @@ class UmsgController { // implements UmsgControllerInterface {
           'recipient_name' => (string) $recipient->name,
           'is_new' => UMSG_UNREAD,
           'archived' => 0,
-          'deleted' => 0,
         ));
       }
 
@@ -421,7 +426,6 @@ class UmsgController { // implements UmsgControllerInterface {
           'recipient_name' => (string) $message->author->name,
           'is_new' => UMSG_READ,
           'archived' => 0,
-          'deleted' => 0,
         ));
       }
       $query->execute();
