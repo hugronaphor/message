@@ -18,10 +18,10 @@
   Drupal.behaviors.umsgView = {
     attach: function(context, settings) {
 
-      $('.umsg-message-teaser .click').click(function(e) {
+      $('.umsg-message-teaser').click(function(e) {
 
-        if (e.isDefaultPrevented()) {
-          return false;
+        if (e.target.className.indexOf('umsg-in-thread-link') >= 0) {
+          return;
         }
 
         $parent = $(this).parents('.umsg-message');
@@ -57,7 +57,6 @@
         //attach textarea value.
         $parent.find('.umsg-reply-form form #edit-body').val('\n--------------------\n' + $fullBody);
         e.preventDefault();
-//        return false;
       });
 
 
