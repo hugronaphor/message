@@ -50,8 +50,6 @@ function umsg_list_js($form, $form_state) {
   return $form['updated'];
 }
 
-
-
 /**
  * List messages.
  *
@@ -117,14 +115,6 @@ function umsg_list($form, &$form_state, $argument, $account) {
     '#weight' => 3,
   );
 
-//  $form['updated']['controls'] = array(
-//    '#type' => 'item',
-//    '#prefix' => '<div id="umsg-list-main-contols">',
-//    '#suffix' => '</div>',
-//    '#markup' => 'test',
-//    '#weight' => 4,
-//  );
-
   $form['updated']['list'] = array(
     '#type' => 'tableselect',
     '#header' => $headers,
@@ -137,8 +127,19 @@ function umsg_list($form, &$form_state, $argument, $account) {
     '#pre_render' => array('_umsg_list_thread'),
   );
 
+  $search_string = NULL;
+  if (!empty($form_state['values']['search_string'])) {
+    if (strlen($form_state['values']['search_string']) > 2) {
+      $search_string = check_plain($form_state['values']['search_string']);
+    }
+    else {
+      drupal_set_message(t('You must include at least one positive keyword with 3 characters or more.'), 'error');
+    }
+  }
+
+
   $umsg = new umsgController();
-  $query = $umsg->load($argument);
+  $query = $umsg->load($argument, array(), NULL, $search_string);
 
   $i = 0;
   foreach ($query->execute() as $row) {
@@ -147,13 +148,74 @@ function umsg_list($form, &$form_state, $argument, $account) {
     $form['updated']['list']['#options'][$row->thread_id]['#weight'] = $i++;
   }
 
-  if (!empty($form['updated']['list']['#options'])) {
-    $form['updated']['actions'] = _umsg_action_form($argument);
+  // Define main top controls box item.
+  $form['updated']['controls'] = array(
+    '#type' => 'item',
+    '#prefix' => '<div id="umsg-list-main-contols">',
+    '#suffix' => '</div>',
+    //'#markup' => 'test',
+    '#weight' => 4,
+  );
+  $form['updated']['controls']['top_first'] = array(
+    '#type' => 'item',
+//    '#prefix' => '<div id="umsg-list-main-contols">',
+//    '#suffix' => '</div>',
+    //'#markup' => 'test',
+    '#weight' => 1,
+  );
 
-    $form['updated']['controls']['check_all'] = array(
+  $form['updated']['controls']['top_first']['inbox_info'] = array(
+    '#type' => 'item',
+    '#markup' => 'Inbox(X)',
+    '#weight' => 1,
+  );
+
+  $form['updated']['controls']['top_first']['search_box'] = array(
+    '#type' => 'item',
+    '#weight' => 2,
+  );
+
+  $form['updated']['controls']['top_first']['search_box']['search_string'] = array(
+    '#type' => 'textfield',
+    '#default_value' => $search_string,
+    '#size' => 60,
+    '#maxlength' => 128,
+    '#attributes' => array(
+      'class' => array('auto_submit'),
+      'placeholder' => t('Search Messages'),
+    ),
+    '#weight' => 1,
+  );
+
+  $form['updated']['controls']['top_first']['search_box']['submit'] = array(
+    '#type' => 'submit',
+    '#value' => 'Search',
+    '#ajax' => array(
+      'callback' => 'umsg_list_js',
+      'wrapper' => 'umsg-list-form',
+      'effect' => 'none',
+    ),
+    '#attributes' => array(
+      'id' => array('index-search-submit'),
+      'class' => array('hide'),
+    ),
+    '#weight' => 2,
+  );
+
+  $form['updated']['controls']['top_second'] = array(
+    '#type' => 'item',
+    '#weight' => 2,
+  );
+
+  if (!empty($form['updated']['list']['#options'])) {
+    $form['updated']['controls']['top_second']['check_all'] = array(
       '#type' => 'checkbox',
       '#title' => t('All'),
+      '#weight' => 1,
     );
+
+    $form['updated']['controls']['top_second']['actions'] = _umsg_action_form($argument);
+    $form['updated']['controls']['top_second']['actions']['#weight'] = 2;
   }
 
   // Save the currently active account, used for actions.
@@ -161,7 +223,7 @@ function umsg_list($form, &$form_state, $argument, $account) {
 
   //dsm($form, 'list form');
   // Define checkboxes, pager and theme
-  $form['updated']['pager'] = array('#markup' => theme('pager'), '#weight' => 2);
+  $form['updated']['controls']['top_second']['pager'] = array('#markup' => theme('pager'), '#weight' => 2);
 
   return $form;
 }
@@ -410,6 +472,12 @@ function umsg_view($thread) {
     '#markup' => $thread['subject'],
     '#weight' => 0,
   );
+
+  $content['top-actions']['self_actions'] = array(
+    '#type' => 'item',
+    '#weight' => -80,
+  );
+
   if (umsg_user_access('delete umsg')) {
 
     $options = array(
@@ -421,7 +489,7 @@ function umsg_view($thread) {
       ),
     );
 
-    $content['top-actions']['thread-delete'] = array(
+    $content['top-actions']['self_actions']['thread-delete'] = array(
       '#type' => 'item',
       '#prefix' => '<div id="umsg-view-top-delete">',
       '#suffix' => '</div>',
@@ -430,7 +498,7 @@ function umsg_view($thread) {
     );
   }
 
-  $content['top-actions']['thread-pager'] = array(
+  $content['top-actions']['self_actions']['thread-pager'] = array(
     '#type' => 'item',
     '#prefix' => '<div id="umsg-view-top-pager">',
     '#suffix' => '</div>',

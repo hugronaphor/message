@@ -1,6 +1,23 @@
 (function($) {
 
-  Drupal.behaviors.checkAllUmsg = {
+  Drupal.behaviors.umsgAutosubmit = {
+    attach: function(context, settings) {
+      var timerid;
+      $(".form-item-search-string").delegate("input#edit-search-string", "keyup", function() {
+        if ($(this).val().length > 2) {
+
+          clearTimeout(timerid);
+          timerid = setTimeout(function() {
+            $("input#index-search-submit").trigger("click");
+          }, 600);
+        }
+      });
+
+    }
+  };
+
+
+  Drupal.behaviors.umsgCheckAll = {
     attach: function(context, settings) {
 
       // To improve
@@ -40,7 +57,7 @@
           });
         }
 
-      //return false;
+        //return false;
       });
 
       // Add reply form.
@@ -59,12 +76,6 @@
         e.preventDefault();
       });
 
-
-
-
-
-
-
       // Clean reply form.
       $('a.cancel-umsg-thread-reply-form').live("click", function(e) {
         $parent = $(this).parents('.umsg-message');
@@ -72,7 +83,6 @@
         e.preventDefault();
         return false;
       });
-
 
     }
   };

@@ -500,7 +500,7 @@ function umsg_thread_delete($threads, $delete, $account = NULL) {
   // Load all messages of those threads including the deleted.
   $umsg = new umsgController();
   $query = $umsg->load('thread_messages', $threads);
-
+//dsm($query->execute());
   $deleted_thread = FALSE;
   // Delete each message.
   foreach ($query->execute() as $row) {
@@ -509,6 +509,8 @@ function umsg_thread_delete($threads, $delete, $account = NULL) {
     // If we have some results to delete,this means that this user own this thread.
     $deleted_thread = TRUE;
   }
+
+  $umsg->setDefaultDbActive();
 
   if ($deleted_thread) {
     if ($delete) {
@@ -680,13 +682,12 @@ function template_preprocess_umsg_view(&$vars) {
 //      '#weight' => -4,
 //    ),
 //  );
-
   // Render message body.
   $vars['message_body'] = check_plain($message->body);
   // Message in thread actions.
   if (isset($vars['mid']) && isset($vars['thread_id'])) {
 
-    if (umsg_user_access('write umsg')) {
+    if (umsg_user_access('write umsg') && $user->uid != $message->author->uid) {
       $vars['message_actions'][] = array(
         'title' => t('Reply'),
         'href' => 'messages/reply/' . $vars['thread_id'] . '/' . $vars['mid'],
@@ -708,10 +709,9 @@ function template_preprocess_umsg_view(&$vars) {
   $vars['message_body_short'] = _umsg_build_subject($vars['message_body']);
 
   $vars['message_anchors'][] = 'umsg-mid-' . $vars['mid'];
-  if (!empty($message->is_new)) {
-    $vars['message_anchors'][] = 'new';
-    $vars['new'] = TRUE;
-  }
+
+  // New class.
+  $vars['message_classes'][] = !empty($message->is_new) ? 'new' : '';
 
   $vars['message_actions'] = !empty($vars['message_actions']) ? theme('links', array('links' => $vars['message_actions'], 'attributes' => array('class' => array('umsg-message-actions', 'links', 'inline')))) : '';
 
@@ -771,35 +771,37 @@ function umsg_message_load($msg_id) {
   return NULL;
 }
 
-function thread_delete_confirm($form_state, $thread_id) {
+function thread_delete_confirm($form_state, $form_state) {
   $form['_thread'] = array(
     '#type' => 'value',
-    '#value' => $thread_id,
+    '#value' => $form_state,
   );
 
-  return confirm_form($form, t('Are you sure you want to delete this thread?'), isset($_GET['destination']) ? $_GET['destination'] : "messages", t('This action cannot be undone.'), t('Delete'), t('Cancel'));
+  if (!empty($form_state['build_info']['args'][0]['thread_id'])) {
+    $thread_id = $form_state['build_info']['args'][0]['thread_id'];
+  }
+
+  return confirm_form($form, t('Are you sure you want to delete this thread?'), isset($thread_id) ? 'messages/view/' . $thread_id : "messages", t('This action cannot be undone.'), t('Delete'), t('Cancel'));
 }
 
 function thread_delete_confirm_submit($form, &$form_state) {
-  $form_values = $form_state['values'];
-
-  if ($form_state['values']['confirm'] && !empty($form_state['values']['_thread']['build_info']['args'][0])) {
-    $thread_id = $form_state['values']['_thread']['build_info']['args'][0];
+  if ($form_state['values']['confirm'] && !empty($form_state['values']['_thread']['build_info']['args'][0]['thread_id'])) {
+    $thread_id = $form_state['values']['_thread']['build_info']['args'][0]['thread_id'];
     umsg_thread_delete(array($thread_id), 0);
+    drupal_goto("messages");
   }
-  drupal_goto("messages");
 }
 
 // ---------------
 
 function message_delete_confirm($form, $form_state, $thread, $message) {
-  
+
   // If message is not available, this means that this user
   // is not allowed to perform this action.
-  if(!$thread || !$message) {
+  if (!$thread || !$message) {
     drupal_goto("messages");
   }
-  
+
   $form['mid'] = array(
     '#type' => 'value',
     '#value' => $message->mid,

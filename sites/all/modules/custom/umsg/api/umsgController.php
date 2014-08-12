@@ -22,7 +22,7 @@ class UmsgController { // implements UmsgControllerInterface {
     $this->setUmsgDbActive();
   }
 
-  public function load($scope = 'list', $ids = array(), $account = NULL) {
+  public function load($scope = 'list', $ids = array(), $account = NULL, $search_string = NULL) {
 
     // Get current user by default.
     if ($account === NULL && $this->current_user !== NULL) {
@@ -40,7 +40,7 @@ class UmsgController { // implements UmsgControllerInterface {
       case 'list':
       case 'list_trash':
       case 'list_sent':
-        $query = $this->list_threads($scope, $account);
+        $query = $this->list_threads($scope, $account, $search_string);
         break;
       case 'thread_messages':
         $query = $this->loadMessages($passed_ids);
@@ -54,12 +54,12 @@ class UmsgController { // implements UmsgControllerInterface {
     return $query;
   }
 
-  private function list_threads($scope, $account) {
+  private function list_threads($scope, $account, $search_string) {
 
     $trash_status = ($scope == 'list_trash') ? 1 : 0;
     $sent = ($scope == 'list_sent') ? 1 : 0;
     
-    dsm('To fix listing in inbox/Sent of trash messages.');
+    dsm('To fix sort listing in inbox/Sent.');
 
     $query = db_select('message', 'm')->extend('PagerDefault');
     $query->join('message_index', 'mi', 'mi.mid = m.mid');
@@ -103,12 +103,17 @@ class UmsgController { // implements UmsgControllerInterface {
       $query->condition('m.author', $account->uid);
     }
 
+    if ($search_string) {
+      $query->condition('m.body', '%' . db_like($search_string) . '%', 'LIKE');
+    }
+    
+    
     $query->condition('mi.recipient', $account->uid);
     // Trash messages.
     $query->condition('archived', $trash_status);
     $query->groupBy('mi.thread_id');
     $query->orderBy('last_updated', 'DESC');
-    $query->limit(variable_get('umsg_per_page', 25));
+    $query->limit(variable_get('umsg_per_page', 2));
 
     return $query;
   }
