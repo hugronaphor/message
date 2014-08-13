@@ -238,10 +238,7 @@ function theme_umsg_username($variables) {
     $recipient->uid = $recipient->recipient;
   }
   if (!empty($options['plain'])) {
-    $name = strip_tags(format_username($recipient));
-    if (!empty($options['unique'])) {
-      $name .= ' [user]';
-    }
+    $name = strip_tags(format_username($recipient));    
     return $name;
   }
   else {

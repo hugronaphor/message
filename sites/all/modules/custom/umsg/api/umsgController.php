@@ -1,20 +1,13 @@
 <?php
 
 /**
- * UmsgBasicControllerInterface definition. *
+ * UmsgController
+ * 
+ * Kind of Controller.
+ * 
+ * @scope: Perform queries to external message DataBase.
  */
-//interface UmsgControllerInterface {
-//
-//  public function load($ids = array(), $conditions = array());
-//
-//  public function save($entity);
-//
-//  function setUmsgDbActive();
-//
-//  function setDefaultDbActive();
-//}
-
-class UmsgController { // implements UmsgControllerInterface {
+class UmsgController {
 
   function __construct() {
     $this->current_user = $this->getCurrentUser();
@@ -22,7 +15,7 @@ class UmsgController { // implements UmsgControllerInterface {
     $this->setUmsgDbActive();
   }
 
-  public function load($scope = 'list', $ids = array(), $account = NULL, $search_string = NULL) {
+  public function load($scope = 'list', $ids = array(), $account = NULL, $search_string = NULL, $range = array(0)) {
 
     // Get current user by default.
     if ($account === NULL && $this->current_user !== NULL) {
@@ -40,7 +33,7 @@ class UmsgController { // implements UmsgControllerInterface {
       case 'list':
       case 'list_trash':
       case 'list_sent':
-        $query = $this->list_threads($scope, $account, $search_string);
+        $query = $this->list_threads($scope, $account, $search_string, $range);
         break;
       case 'thread_messages':
         $query = $this->loadMessages($passed_ids);
@@ -54,37 +47,22 @@ class UmsgController { // implements UmsgControllerInterface {
     return $query;
   }
 
-  private function list_threads($scope, $account, $search_string) {
+  private function list_threads($scope, $account, $search_string, $range) {
 
     $trash_status = ($scope == 'list_trash') ? 1 : 0;
     $sent = ($scope == 'list_sent') ? 1 : 0;
-    
-    dsm('To fix sort listing in inbox/Sent.');
 
-    $query = db_select('message', 'm')->extend('PagerDefault');
+//    dsm('To fix sort listing in inbox/Sent.');
+
+    $query = db_select('message', 'm');
     $query->join('message_index', 'mi', 'mi.mid = m.mid');
-
-    // Create count query;
-    $count_query = db_select('message', 'm');
-    $count_query->addExpression('COUNT(DISTINCT mi.thread_id)', 'count');
-    $count_query->join('message_index', 'mi', 'mi.mid = m.mid');
-    // Sent messages.
-    if ($sent) {
-      $count_query->condition('m.author', $account->uid);
-    }
-
-    $count_query->condition('mi.recipient', $account->uid);
-    // Trash messages
-    $count_query->condition('mi.archived', $trash_status);
-
-    $query->setCountQuery($count_query);
-
+    
     // Required columns
     $query->addField('mi', 'thread_id');
 
     $query->addExpression('SUM(mi.archived)', 'archived');
     // Strip message field in order to be used as short teaser for thread.
-    $query->addExpression('SUBSTRING(m.body, 1, 50)', 'subject');
+    $query->addExpression('m.subject', 'subject');
     $query->addExpression('MAX(m.timestamp)', 'last_updated');
     $query->addExpression('SUM(mi.is_new)', 'is_new');
 
@@ -106,14 +84,14 @@ class UmsgController { // implements UmsgControllerInterface {
     if ($search_string) {
       $query->condition('m.body', '%' . db_like($search_string) . '%', 'LIKE');
     }
-    
-    
+
+
     $query->condition('mi.recipient', $account->uid);
     // Trash messages.
     $query->condition('archived', $trash_status);
     $query->groupBy('mi.thread_id');
     $query->orderBy('last_updated', 'DESC');
-    $query->limit(variable_get('umsg_per_page', 2));
+    $query->range($range[0], $range[1]);
 
     return $query;
   }
@@ -170,7 +148,7 @@ class UmsgController { // implements UmsgControllerInterface {
         $count_msg = count($thread['messages']);
         $thread['user'] = $account;
         $message = current($thread['messages']);
-        $thread['subject'] = $thread['subject-original'] = _umsg_build_subject($thread['messages'][$count_msg - 1]->body, TRUE);
+        $thread['subject'] = $thread['subject-original'] = $message->subject;
         $thread['last_updated'] = $message->timestamp;
         // Detect if we are on archived/not archived thread.
         $thread['archived'] = $message->archived;
@@ -385,9 +363,7 @@ class UmsgController { // implements UmsgControllerInterface {
    *   The updated $message array.
    */
   public function send($message) {
-
-//    dsm($message, 'controller message obj');
-//  return;
+    
     $transaction = db_transaction();
     try {
 
@@ -397,6 +373,7 @@ class UmsgController { // implements UmsgControllerInterface {
       $args = array();
       $args['author'] = $message->author->uid;
       $args['body'] = $message->body;
+      $args['subject'] = $message->subject;
       $args['timestamp'] = $message->timestamp;
       $mid = db_insert('message')
               ->fields($args)

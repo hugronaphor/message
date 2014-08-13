@@ -137,9 +137,36 @@ function umsg_list($form, &$form_state, $argument, $account) {
     }
   }
 
+  // Determine pager variables.
+  $per_page = variable_get('umsg_per_page', 50);
+  // Initial query range params.
+  $range = array(0, $per_page);
+  $current_page = isset($form_state['current_page']['#value']) && $form_state['current_page']['#value'] > 0 ?
+          $form_state['current_page']['#value'] : 0;
+
+  // Decrease page number on prev btn trigger.
+  if (isset($form_state['triggering_element']['#parents'][0]) && $form_state['triggering_element']['#parents'][0] == 'prev') {
+    $current_page = ($current_page > 0) ? $current_page - 1 : 0;
+  }
+
+  // Increase page number on next btn trigger.
+  if (isset($form_state['triggering_element']['#parents'][0]) && $form_state['triggering_element']['#parents'][0] == 'next') {
+    $current_page = $current_page + 1;
+  }
+
+  // Store current page.
+  $form_state['current_page'] = array(
+    '#type' => 'hidden',
+    '#value' => $current_page,
+  );
+
+  $range = array($current_page * $per_page, $per_page);
 
   $umsg = new umsgController();
-  $query = $umsg->load($argument, array(), NULL, $search_string);
+  $query = $umsg->load($argument, array(), NULL, $search_string, $range);
+  // Get total number of threads.
+  $count_query = $umsg->load($argument, array(), NULL, $search_string, array(0, 999999));
+  $total_threads = $count_query->countQuery()->execute()->fetchField();
 
   $i = 0;
   foreach ($query->execute() as $row) {
@@ -153,54 +180,21 @@ function umsg_list($form, &$form_state, $argument, $account) {
     '#type' => 'item',
     '#prefix' => '<div id="umsg-list-main-contols">',
     '#suffix' => '</div>',
-    //'#markup' => 'test',
     '#weight' => 4,
   );
   $form['updated']['controls']['top_first'] = array(
     '#type' => 'item',
-//    '#prefix' => '<div id="umsg-list-main-contols">',
-//    '#suffix' => '</div>',
-    //'#markup' => 'test',
     '#weight' => 1,
   );
 
   $form['updated']['controls']['top_first']['inbox_info'] = array(
     '#type' => 'item',
-    '#markup' => 'Inbox(X)',
+    '#markup' => umsg_title_callback(),
     '#weight' => 1,
   );
 
-  $form['updated']['controls']['top_first']['search_box'] = array(
-    '#type' => 'item',
-    '#weight' => 2,
-  );
-
-  $form['updated']['controls']['top_first']['search_box']['search_string'] = array(
-    '#type' => 'textfield',
-    '#default_value' => $search_string,
-    '#size' => 60,
-    '#maxlength' => 128,
-    '#attributes' => array(
-      'class' => array('auto_submit'),
-      'placeholder' => t('Search Messages'),
-    ),
-    '#weight' => 1,
-  );
-
-  $form['updated']['controls']['top_first']['search_box']['submit'] = array(
-    '#type' => 'submit',
-    '#value' => 'Search',
-    '#ajax' => array(
-      'callback' => 'umsg_list_js',
-      'wrapper' => 'umsg-list-form',
-      'effect' => 'none',
-    ),
-    '#attributes' => array(
-      'id' => array('index-search-submit'),
-      'class' => array('hide'),
-    ),
-    '#weight' => 2,
-  );
+  // Append search form elements.
+  $form = _umsg_attach_search_elements($form, $search_string);
 
   $form['updated']['controls']['top_second'] = array(
     '#type' => 'item',
@@ -221,18 +215,14 @@ function umsg_list($form, &$form_state, $argument, $account) {
   // Save the currently active account, used for actions.
   $form['account'] = array('#type' => 'value', '#value' => $account);
 
-  //dsm($form, 'list form');
-  // Define checkboxes, pager and theme
-  $form['updated']['controls']['top_second']['pager'] = array('#markup' => theme('pager'), '#weight' => 2);
+  // Append pager form elements.
+  $form = _umsg_attach_pager_elements($form, $total_threads, $current_page, $range, $per_page);
 
   return $form;
 }
 
 /**
  * Process umsg_list form submissions.
- *
- * Execute the chosen action on the selected messages. This function is
- * based on node_admin_nodes_submit().
  */
 function umsg_list_submit($form, &$form_state) {
 
@@ -280,103 +270,6 @@ function umsg_list_submit($form, &$form_state) {
   $form_state['input'] = array();
 }
 
-// --------------------------------------------- //
-
-function umsg_new_validate($form, &$form_state) {
-
-  // The actual message that is being sent, we create this during validation and
-  // pass to submit to send out.
-  $message = (object) $form_state['values'];
-  $message->mid = 0;
-  $message->body = isset($message->body) ? $message->body : '';
-  $message->timestamp = REQUEST_TIME;
-
-  // Only parse the user string for a new thread.
-  // Used for new thread (deal with one recipient).
-  if (!isset($message->thread_id)) {
-    $recipient_obj = user_load_by_name($message->recipient);
-
-    // Check for valid user.
-    if (isset($recipient_obj->uid)) {
-      $message->recipients = array($recipient_obj->uid => $recipient_obj);
-    }
-    else {
-      $message->recipients = array();
-    }
-  }
-  // Used for existing thread reply.
-  // args 0 should be recipients array, from umsg_view
-  elseif (is_array($form_state['build_info']['args'][0])) {
-    $message->recipients = $form_state['build_info']['args'][0];
-  }
-
-  $validated = _umsg_validate_message($message, TRUE);
-  foreach ($validated['messages'] as $type => $texts) {
-    foreach ($texts as $text) {
-      drupal_set_message($text, $type);
-    }
-  }
-  $form_state['validate_built_message'] = $message;
-}
-
-/**
- * Submit callback for the umsg_new form.
- */
-function umsg_new_submit($form, &$form_state) {
-
-  $message = $form_state['validate_built_message'];
-
-  // Format each recipient.
-  // As we use une-to-one user message, get first ant unique name.
-  $recipient_first = reset($message->recipients);
-  $recipient = $recipient_first->name;
-
-  try {
-    $umsg = new umsgController();
-    $message = $umsg->send($message);
-    drupal_set_message(t('A message has been sent to !recipient.', array('!recipient' => $recipient)));
-    // Forward to the new message in the thread.
-    $form_state['redirect'] = array('messages/view/' . $message->thread_id);
-  }
-  catch (Exception $e) {
-    if (error_displayable()) {
-      require_once DRUPAL_ROOT . '/includes/errors.inc';
-      $variables = _drupal_decode_exception($e);
-      drupal_set_message(t('Failed to send a message to !recipients. %type: !message in %function (line %line of %file).', array('!recipients' => $recipient) + $variables), 'error');
-    }
-    else {
-      drupal_set_message(t('Failed to send a message to !recipients. Contact your site administrator.', $recipient), 'error');
-    }
-  }
-}
-
-/**
- * Return autocomplete results for usernames.
- */
-function umsg_autocomplete($string) {
-  // Parse $string and build list of valid user names.
-  $matches = array();
-  $return = umsg_user_autocomplete($string);
-
-  if (is_array($return) && !empty($return)) {
-    $matches = $return;
-  }
-
-  // Format the suggestions.
-  $themed_matches = array();
-  foreach ($matches as $key => $match) {
-    $themed_matches[$key] = umsg_recipient_format($match, array('plain' => TRUE));
-  }
-
-  $suggestions = array();
-  foreach ($themed_matches as $match) {
-    $suggestions[$match] = $match;
-  }
-
-  // convert to object to prevent drupal bug, see http://drupal.org/node/175361
-  drupal_json_output((object) $suggestions);
-}
-
 /**
  * Menu callback for viewing a thread.
  *
@@ -388,7 +281,7 @@ function umsg_autocomplete($string) {
 function umsg_view($thread) {
   $umsg = new umsgController();
   $thread = $umsg->threadLoad(check_plain($thread));
-//  dsm($thread);
+  
   // Get prev/next thread id's
   $umsg->setDefaultDbActive();
 
@@ -469,7 +362,7 @@ function umsg_view($thread) {
     '#type' => 'item',
     '#prefix' => '<div id="umsg-view-top-subject">',
     '#suffix' => '</div>',
-    '#markup' => $thread['subject'],
+    '#markup' => _umsg_build_subject($thread['subject'], TRUE),
     '#weight' => 0,
   );
 
@@ -516,7 +409,7 @@ function umsg_view($thread) {
 
   // Display the reply form if user is allowed to use it.
   if ($write_umsg) {
-    $content['reply'] = drupal_get_form('umsg_new', $thread['participants'], $thread['subject-original'], $thread['thread_id'], FALSE);
+    $content['reply'] = drupal_get_form('umsg_new', $thread['participants'], $thread['subject'], $thread['thread_id'], FALSE);
     $content['reply']['#prefix'] = '<div class="hide" id="umsg-view-base-reply-form">';
     $content['reply']['#suffix'] = '</div>';
   }
@@ -651,6 +544,10 @@ function umsg_new($form, &$form_state, $recipients = array(), $subject = '', $th
       '#type' => 'value',
       '#value' => $thread_id,
     );
+    $form['umsg-page-content']['thread_subject'] = array(
+      '#type' => 'value',
+      '#value' => $subject,
+    );
 
     if (empty($to)) {
       // If there are no valid recipient, hide all visible parts of the form.
@@ -665,4 +562,108 @@ function umsg_new($form, &$form_state, $recipients = array(), $subject = '', $th
   $form['umsg-page-content']['#validate'] = array('umsg_new_validate');
 
   return $form;
+}
+
+function umsg_new_validate($form, &$form_state) {
+
+  // The actual message that is being sent, we create this during validation and
+  // pass to submit to send out.
+  $message = (object) $form_state['values'];
+  $message->mid = 0;
+  $message->body = isset($message->body) ? $message->body : '';  
+  $message->timestamp = REQUEST_TIME;
+  
+  // Keep the same subject for existing thread.
+  if(isset($message->thread_subject)) {
+    $message->subject = $message->thread_subject;
+  }
+  // Build new subject.
+  else {
+    $message->subject = _umsg_build_subject($message->body);
+  }  
+
+  // Only parse the user string for a new thread.
+  // Used for new thread (deal with one recipient).
+  if (!isset($message->thread_id)) {
+    $recipient_obj = user_load_by_name($message->recipient);
+
+    // Check for valid user.
+    if (isset($recipient_obj->uid)) {
+      $message->recipients = array($recipient_obj->uid => $recipient_obj);
+    }
+    else {
+      $message->recipients = array();
+    }
+  }
+  // Used for existing thread reply.
+  // args 0 should be recipients array, from umsg_view
+  elseif (is_array($form_state['build_info']['args'][0])) {
+    $message->recipients = $form_state['build_info']['args'][0];
+  }
+
+  $validated = _umsg_validate_message($message, TRUE);
+  foreach ($validated['messages'] as $type => $texts) {
+    foreach ($texts as $text) {
+      drupal_set_message($text, $type);
+    }
+  }
+  $form_state['validate_built_message'] = $message;
+}
+
+/**
+ * Submit callback for the umsg_new form.
+ */
+function umsg_new_submit($form, &$form_state) {
+
+  $message = $form_state['validate_built_message'];
+  
+  // Format each recipient.
+  // As we use une-to-one user message, get first and unique name.
+  $recipient_first = reset($message->recipients);
+  $recipient = $recipient_first->name;
+
+  try {
+    $umsg = new umsgController();
+    $message = $umsg->send($message);
+    drupal_set_message(t('A message has been sent to !recipient.', array('!recipient' => $recipient)));
+    // Forward to the new message in the thread.
+    $form_state['redirect'] = array('messages/view/' . $message->thread_id);
+  }
+  catch (Exception $e) {
+    if (error_displayable()) {
+      require_once DRUPAL_ROOT . '/includes/errors.inc';
+      $variables = _drupal_decode_exception($e);
+      drupal_set_message(t('Failed to send a message to !recipients. %type: !message in %function (line %line of %file).', array('!recipients' => $recipient) + $variables), 'error');
+    }
+    else {
+      drupal_set_message(t('Failed to send a message to !recipients. Contact your site administrator.', $recipient), 'error');
+    }
+  }
+}
+
+/**
+ * Return autocomplete results for usernames.
+ */
+function umsg_autocomplete($string) {
+  // Parse $string and build list of valid user names.
+  $matches = array();
+  $return = umsg_user_autocomplete($string);
+
+  if (is_array($return) && !empty($return)) {
+    $matches = $return;
+  }
+
+  // Format the suggestions.
+  $themed_matches = array();
+  foreach ($matches as $key => $match) {
+    $themed_matches[$key] = umsg_recipient_format($match, array('plain' => TRUE));
+  }
+
+  $suggestions = array();
+  foreach ($themed_matches as $match) {
+    $suggestions[$match] = $match;
+  }
+
+  // convert to object to prevent drupal bug, see http://drupal.org/node/175361
+  drupal_json_output((object) $suggestions);
 }

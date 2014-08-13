@@ -47,15 +47,15 @@ function umsg_admin_settings() {
     '#description' => t('Choose the number of conversations that should be listed per page.'),
   );
 
-  $amounts = drupal_map_assoc(array(5, 10, 20, 30, 50, 70, 90, 150, 200, 250, 300));
-  $form['umsg_listing']['umsg_view_max_amount'] = array(
-    '#type' => 'select',
-    '#title' => t('Number of messages on thread pages'),
-    '#options' => $amounts + array(UMSG_UNLIMITED => t('Unlimited')),
-    '#default_value' => variable_get('umsg_view_max_amount', 20),
-    '#description' => t('Threads will not show more than this number of messages on a single page.'),
-    '#weight' => 10,
-  );
+//  $amounts = drupal_map_assoc(array(5, 10, 20, 30, 50, 70, 90, 150, 200, 250, 300));
+//  $form['umsg_listing']['umsg_view_max_amount'] = array(
+//    '#type' => 'select',
+//    '#title' => t('Number of messages on thread pages'),
+//    '#options' => $amounts + array(UMSG_UNLIMITED => t('Unlimited')),
+//    '#default_value' => variable_get('umsg_view_max_amount', 20),
+//    '#description' => t('Threads will not show more than this number of messages on a single page.'),
+//    '#weight' => 10,
+//  );
 
   return system_settings_form($form);
 }

@@ -18,6 +18,7 @@ define('UMSG_GENERATE_DUMMY_CONTENT', TRUE);
 
 function umsg_install() {
   variable_set('umsg_db_name', UMSG_DB_NAME);
+
   db_set_active(UMSG_DB_NAME);
   $schema = umsg_schema_msgdb();
   foreach ($schema as $name => $table) {
@@ -27,7 +28,7 @@ function umsg_install() {
 
   // Generate dummy content.
   if (UMSG_GENERATE_DUMMY_CONTENT) {
-    _umsg_create_users(5, TRUE);
+    _umsg_create_users(54, TRUE);
     // TO DO: To Generate messages using API.
     _umsg_populate_messages();
   }
@@ -36,6 +37,8 @@ function umsg_install() {
   variable_set("date_format_umsg_current_day", 'g:i a');
   variable_set("date_format_umsg_current_year", 'M d');
   variable_set("date_format_umsg_years", 'M d Y');
+
+  variable_set('umsg_per_page', 10); // test reason
 }
 
 function _umsg_populate_messages() {
@@ -59,9 +62,9 @@ function _umsg_populate_messages() {
     $message = array();
     //$message['subject'] = 'The test subject from ' . $admin_user->name . ' to ' . $recipient_user->name;
     $message['author'] = $admin_user->uid;
+    $message['subject'] = 'Test Subject ' . $key;
     $message['body'] = substr(md5(microtime()), 0, 10) . ' -- Morbi mattis ullamcorper velit. Etiam ultricies nisi vel augue. Sed fringilla mauris sit amet nibh. Suspendisse faucibus.';
     //$message['format'] = 'plain_text
-
     // Just create a current time for one item.
     $the_time = ($min_user_key == $key) ? time() : rand('1400327437', time());
     $message['timestamp'] = (string) $the_time;
@@ -135,6 +138,14 @@ function umsg_uninstall() {
   if (UMSG_GENERATE_DUMMY_CONTENT) {
     _umsg_create_users(0, TRUE);
   }
+
+  variable_del('umsg_db_name');
+
+  variable_del('umsg_per_page');
+
+  variable_del("date_format_umsg_current_day");
+  variable_del("date_format_umsg_current_year");
+  variable_del("date_format_umsg_years");
 }
 
 function umsg_schema_msgdb() {
@@ -152,6 +163,12 @@ function umsg_schema_msgdb() {
         'type' => 'int',
         'not null' => TRUE,
         'unsigned' => TRUE,
+      ),
+      'subject' => array(
+        'description' => 'Subject text of the message, used to have a unique subject for all thread participants',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
       ),
       'body' => array(
         'description' => 'Body of the message',

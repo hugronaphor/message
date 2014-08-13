@@ -500,7 +500,7 @@ function umsg_thread_delete($threads, $delete, $account = NULL) {
   // Load all messages of those threads including the deleted.
   $umsg = new umsgController();
   $query = $umsg->load('thread_messages', $threads);
-//dsm($query->execute());
+  
   $deleted_thread = FALSE;
   // Delete each message.
   foreach ($query->execute() as $row) {
@@ -825,4 +825,112 @@ function message_delete_confirm_submit($form, &$form_state) {
   }
 
   $form_state['redirect'] = $form_state['values']['delete_destination'];
+}
+
+function _umsg_attach_search_elements($form, $search_string) {
+  
+  $form['updated']['controls']['top_first']['search_box'] = array(
+    '#type' => 'item',
+    '#weight' => 2,
+  );
+
+  $form['updated']['controls']['top_first']['search_box']['search_string'] = array(
+    '#type' => 'textfield',
+    '#default_value' => $search_string,
+    '#size' => 60,
+    '#maxlength' => 128,
+    '#attributes' => array(
+      //'class' => array('auto_submit'),
+      'placeholder' => t('Search Messages'),
+    ),
+    '#weight' => 1,
+  );
+
+  $form['updated']['controls']['top_first']['search_box']['submit'] = array(
+    '#type' => 'submit',
+    '#value' => 'Search',
+    '#ajax' => array(
+      'callback' => 'umsg_list_js',
+      'wrapper' => 'umsg-list-form',
+      'effect' => 'none',
+    ),
+    '#attributes' => array(
+      //'id' => array('index-search-submit'),
+      'class' => array(''),
+    ),
+    '#weight' => 2,
+  );
+  
+  return $form;
+}
+
+function _umsg_attach_pager_elements($form, $total_threads, $current_page, $range, $per_page) {
+
+  $form['updated']['controls']['top_second']['pager'] = array(
+    '#type' => 'item',
+    '#weight' => 2,
+  );
+
+  $form['updated']['controls']['top_second']['pager']['info'] = array(
+    '#type' => 'item',
+    '#markup' => _umsg_get_index_pager_state($total_threads, $range),
+    '#prefix' => '<div class="index-pager info">',
+    '#suffix' => '</div>',
+    '#weight' => 1,
+  );
+
+  $form['updated']['controls']['top_second']['pager']['prev'] = array(
+    '#type' => 'submit',
+    '#value' => '<',
+    '#ajax' => array(
+      'callback' => 'umsg_list_js',
+      'wrapper' => 'umsg-list-form',
+      'effect' => 'none',
+    // 'progress' => array('type' => 'fake'), // to disable throber
+    ),
+    '#attributes' => array(
+      'class' => array('index-pager prev'),
+    ),
+    '#weight' => 2,
+  );
+
+  // Disable prev btn if we are on first page.
+  if ($current_page <= 0) {
+    $form['updated']['controls']['top_second']['pager']['prev']['#disabled'] = TRUE;
+  }
+
+  $form['updated']['controls']['top_second']['pager']['next'] = array(
+    '#type' => 'submit',
+    '#value' => '>',
+    '#ajax' => array(
+      'callback' => 'umsg_list_js',
+      'wrapper' => 'umsg-list-form',
+      'effect' => 'none',
+    ),
+    '#attributes' => array(
+      'class' => array('index-pager next'),
+    ),
+    '#weight' => 3,
+  );
+
+  // Disable next btn if we reached final page.
+  if ($current_page >= floor($total_threads / $per_page)) {
+    $form['updated']['controls']['top_second']['pager']['next']['#disabled'] = TRUE;
+  }
+
+  return $form;
+}
+
+function _umsg_get_index_pager_state($total, $range) {
+  $start = $range[0];
+  $end = $start + $range[1];
+  if ($end > $total) {
+    $end = $total;
+  }
+
+  return t('@start-@end of @total', array(
+    '@start' => $start,
+    '@end' => $end,
+    '@total' => $total,
+  ));
 }

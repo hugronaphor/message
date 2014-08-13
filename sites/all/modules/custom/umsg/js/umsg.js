@@ -1,27 +1,28 @@
 (function($) {
 
+  // I suppose we use JQuery 1.4
+
   Drupal.behaviors.umsgAutosubmit = {
     attach: function(context, settings) {
-      var timerid;
-      $(".form-item-search-string").delegate("input#edit-search-string", "keyup", function() {
-        if ($(this).val().length > 2) {
-
-          clearTimeout(timerid);
-          timerid = setTimeout(function() {
-            $("input#index-search-submit").trigger("click");
-          }, 600);
-        }
-      });
+//      var timerid;
+//      $(".form-item-search-string").delegate("input#edit-search-string", "keyup", function() {
+//        if ($(this).val().length > 2) {
+//
+//          clearTimeout(timerid);
+//          timerid = setTimeout(function() {
+//            $("input#index-search-submit").trigger("click");
+//          }, 600);
+//        }
+//      });
 
     }
   };
-
 
   Drupal.behaviors.umsgCheckAll = {
     attach: function(context, settings) {
 
       // To improve
-      $('#edit-check-all, #edit-check-all--2').click(function() {
+      $('#edit-check-all, #edit-check-all--2').live("click", function(e) {
         if (this.checked) {
           $('.umsg-list td input:checkbox').attr('checked', true).parents('tr').addClass('selected');
         } else {
