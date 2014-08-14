@@ -8,6 +8,7 @@
  * change database name in admin, as this probably *have no reason.
  * 
  */
+
 /**
  * Default message database name.
  * (same as in settings.php)
